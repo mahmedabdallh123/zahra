@@ -10,10 +10,22 @@
     "manger": {
         "password": "55555",
         "permissions": {
-            "all_sections": true
+            "all_sections": false
         },
         "role": "viewer",
-        "sections_permissions": {}
+        "sections_permissions": {
+            "البرم": [],
+            "التفتيح": [],
+            "الضواغط": [],
+            "الغزل": [],
+            "الكرد": [],
+            "المحطات": [],
+            "المكبس": [],
+            "تمشيط": [],
+            "سحب اول": [],
+            "سحب ثاني": [],
+            "ملفات": []
+        }
     },
     "مدير_صيانة": {
         "password": "12345",
