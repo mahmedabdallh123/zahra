@@ -7,6 +7,14 @@
         "role": "admin",
         "sections_permissions": {}
     },
+    "manger": {
+        "password": "55555",
+        "permissions": {
+            "all_sections": false
+        },
+        "role": "viewer",
+        "sections_permissions": {}
+    },
     "مدير_صيانة": {
         "password": "12345",
         "permissions": {
@@ -147,18 +155,27 @@
         },
         "role": "viewer",
         "sections_permissions": {
+            "البرم": [],
             "التفتيح": [
                 "view",
                 "edit",
                 "add_event",
                 "manage_machines"
             ],
+            "الضواغط": [],
+            "الغزل": [],
             "الكرد": [
                 "view",
                 "edit",
                 "add_event",
                 "manage_machines"
-            ]
+            ],
+            "المحطات": [],
+            "المكبس": [],
+            "تمشيط": [],
+            "سحب اول": [],
+            "سحب ثاني": [],
+            "ملفات": []
         }
     }
 }
