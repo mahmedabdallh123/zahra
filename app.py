@@ -1553,6 +1553,11 @@ def add_new_event(sheets_edit, sheet_name):
         if "correction_desc_value" not in st.session_state or st.session_state.correction_desc_value in previous_corrections:
             st.session_state.correction_desc_value = ""
 
+    # تعريف متغيرات قطع الغيار بقيم افتراضية
+    part_name = ""
+    consume_qty = 0
+    warning_msg = ""
+
     spare_parts_list = get_spare_parts_for_section(sheet_name)
 
     with st.form(key="add_event_form"):
@@ -1560,29 +1565,98 @@ def add_new_event(sheets_edit, sheet_name):
         with col1:
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
-            # الحدث والعطل
             event_desc = st.text_area("📝 الحدث/العطل:", value=st.session_state.get("event_desc_value", ""), height=100, key="event_desc_area")
             fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "هوائي", "هيكلي", "آخر"])
             uploaded_image = st.file_uploader("🖼️ رفع صورة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
         with col2:
-            # الإجراء التصحيحي
             correction_desc = st.text_area("🔧 الإجراء التصحيحي:", value=st.session_state.get("correction_desc_value", ""), height=100, key="correction_desc_area")
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
             technician_rating = st.select_slider("⭐ قدرة الفني (حل/تفكير/مبادرة/قرار):", options=[1, 2, 3, 4, 5], value=3)
             safety_compliance = st.selectbox("🛡️ الالتزام بتعليمات السلامة:", ["", "ملتزم بالكامل", "ملتزم جزئياً", "غير ملتزم", "غير مطبق"])
-            # قطع الغيار (كما هي)
             st.markdown("---")
             st.markdown("**🔩 قطع الغيار المستخدمة**")
-            # ... (الكود الخاص بقطع الغيار كما هو)
+            if spare_parts_list:
+                part_names = [f"{name} (الرصيد: {qty})" for name, qty in spare_parts_list]
+                selected_part_display = st.selectbox("اختر قطعة:", [""] + part_names, key="spare_part_select")
+                if selected_part_display:
+                    part_name = selected_part_display.split(" (")[0]
+                    current_qty = next((qty for name, qty in spare_parts_list if name == part_name), 0)
+                    st.caption(f"الرصيد الحالي: {current_qty}")
+                    consume_qty = st.number_input("الكمية المستخدمة:", min_value=1, max_value=max(1, current_qty), value=1, step=1, key="consume_qty")
+                    if consume_qty > current_qty:
+                        st.error(f"⚠️ الرصيد غير كافٍ (الموجود {current_qty})")
+                    else:
+                        st.success(f"سيتم خصم {consume_qty} من الرصيد")
+                else:
+                    part_name = ""
+                    consume_qty = 0
+            else:
+                st.info("لا توجد قطع غيار مسجلة لهذا القسم. يمكنك إضافتها من تبويب 'قطع الغيار'.")
+                part_name = ""
+                consume_qty = 0
 
         submitted = st.form_submit_button("✅ إضافة الحدث", type="primary")
         if submitted:
-            # ... (نفس منطق التحقق والحفظ)
-            # بعد الحفظ بنجاح:
-            if save_and_push_to_github(sheets_edit, f"إضافة حدث عطل مع استخدام قطعة {part_name}"):
+            # استهلاك قطعة الغيار إذا تم اختيارها
+            spare_part_used = ""
+            if part_name and consume_qty > 0:
+                success, msg, new_qty = consume_spare_part(part_name, consume_qty)
+                if success:
+                    spare_part_used = f"{part_name} (كمية {consume_qty})"
+                    critical_parts = get_critical_spare_parts()
+                    for cp in critical_parts:
+                        if cp["اسم القطعة"] == part_name:
+                            warning_msg = f"⚠️ **تحذير:** القطعة '{part_name}' ضرورية وأصبح رصيدها {new_qty} (أقل من 1). يرجى إعادة التوريد."
+                            break
+                else:
+                    st.error(msg)
+                    return sheets_edit
+
+            # رفع الصورة (اختياري)
+            image_url = None
+            if uploaded_image is not None:
+                event_id = str(uuid.uuid4())[:8]
+                image_url = upload_image_to_github(uploaded_image, "event", event_id)
+                if image_url:
+                    st.success("✅ تم رفع الصورة بنجاح!")
+                else:
+                    st.warning("⚠️ فشل رفع الصورة، سيتم حفظ الحدث بدون صورة")
+
+            # إنشاء الصف الجديد
+            new_row = {
+                "مده الاصلاح": repair_duration if repair_duration > 0 else "",
+                "التاريخ": event_date.strftime("%Y-%m-%d"),
+                "المعدة": selected_equipment,
+                "الحدث/العطل": event_desc,
+                "الإجراء التصحيحي": correction_desc,
+                "تم بواسطة": servised_by,
+                "قطع غيار مستخدمة": spare_part_used,
+                "نوع العطل": fault_type if fault_type else "",
+                "قدرة الفني (حل/تفكير/مبادرة/قرار)": technician_rating,
+                "الالتزام بتعليمات السلامة": safety_compliance if safety_compliance else "",
+                "رابط الصورة": image_url or ""
+            }
+            # إضافة الأعمدة المفقودة
+            for col in df.columns:
+                if col not in new_row:
+                    new_row[col] = ""
+
+            new_row_df = pd.DataFrame([new_row])
+            df_new = pd.concat([df, new_row_df], ignore_index=True)
+            sheets_edit[sheet_name] = df_new
+
+            # تحديث قطع الغيار إذا تم التعديل
+            if "temp_spare_parts_df" in st.session_state:
+                sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
+                del st.session_state.temp_spare_parts_df
+
+            # رسالة commit مناسبة (مع أو بدون قطعة غيار)
+            commit_message = f"إضافة حدث عطل مع استخدام قطعة {part_name}" if part_name else "إضافة حدث عطل بدون قطع غيار"
+
+            if save_and_push_to_github(sheets_edit, commit_message):
                 st.cache_data.clear()
                 log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
-                # مسح القيم المخزنة
+                # مسح القيم المخزنة في session_state
                 st.session_state.event_desc_value = ""
                 st.session_state.correction_desc_value = ""
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
