@@ -1532,6 +1532,11 @@ def add_new_event(sheets_edit, sheet_name):
     df_equip = df[df["المعدة"] == selected_equipment]
     previous_events = df_equip["الحدث/العطل"].dropna().unique()
     previous_events = [str(e).strip() for e in previous_events if str(e).strip() != ""]
+    
+    # إذا لم توجد أعطال سابقة، نعرض رسالة
+    if not previous_events:
+        st.info("ℹ️ لا توجد أعطال سابقة لهذه الماكينة. يمكنك كتابة حدث جديد.")
+    
     event_options = ["-- اختر من السابق --"] + sorted(previous_events)
     selected_event_option = st.selectbox("اختر حدث/عطل سابق:", event_options, key="event_old_select")
 
@@ -1544,6 +1549,10 @@ def add_new_event(sheets_edit, sheet_name):
     # استخراج الإجراءات التصحيحية السابقة
     previous_corrections = df_equip["الإجراء التصحيحي"].dropna().unique()
     previous_corrections = [str(c).strip() for c in previous_corrections if str(c).strip() != ""]
+    
+    if not previous_corrections:
+        st.info("ℹ️ لا توجد إجراءات تصحيحية سابقة لهذه الماكينة.")
+    
     correction_options = ["-- اختر من السابق --"] + sorted(previous_corrections)
     selected_correction_option = st.selectbox("اختر إجراء تصحيحي سابق:", correction_options, key="correction_old_select")
 
@@ -1650,23 +1659,22 @@ def add_new_event(sheets_edit, sheet_name):
                 sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                 del st.session_state.temp_spare_parts_df
 
-            # رسالة commit مناسبة (مع أو بدون قطعة غيار)
+            # رسالة commit مناسبة
             commit_message = f"إضافة حدث عطل مع استخدام قطعة {part_name}" if part_name else "إضافة حدث عطل بدون قطع غيار"
 
             if save_and_push_to_github(sheets_edit, commit_message):
                 st.cache_data.clear()
                 log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
-                # مسح القيم المخزنة في session_state
+                # مسح القيم المخزنة
                 st.session_state.event_desc_value = ""
                 st.session_state.correction_desc_value = ""
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
                 if warning_msg:
                     st.warning(warning_msg)
-                st.rerun()
+                st.rerun()   # يعيد تحميل الصفحة لتحديث القوائم
             else:
                 st.error("❌ فشل الحفظ")
     return sheets_edit
-
 # ------------------------------- دوال مساعدة للصيانة الوقائية -------------------------------
 def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
