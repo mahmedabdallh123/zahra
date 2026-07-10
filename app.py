@@ -1104,6 +1104,34 @@ def search_across_sheets(all_sheets):
         with col2:
             technician_search = st.text_input("👨‍🔧 بحث بالفني (تم بواسطة):", placeholder="أدخل اسم الفني...")
         
+        # ===== إضافة فلتر نوع العطل =====
+        st.markdown("#### 🏷️ فلتر نوع العطل")
+        # استخلاص قائمة بأنواع الأعطال المتاحة من الأقسام المختارة
+        all_fault_types = set()
+        if selected_sheet != "جميع الأقسام":
+            df_temp = all_sheets[selected_sheet]
+            if "نوع العطل" in df_temp.columns:
+                all_fault_types.update(df_temp["نوع العطل"].dropna().unique())
+        else:
+            for sh_name in allowed_sections:
+                df_temp = all_sheets[sh_name]
+                if "نوع العطل" in df_temp.columns:
+                    all_fault_types.update(df_temp["نوع العطل"].dropna().unique())
+        fault_type_options = sorted([str(t).strip() for t in all_fault_types if str(t).strip() != ""])
+        
+        # إما اختيار من القائمة أو كتابة نوع مخصص
+        use_multiselect = st.checkbox("اختيار من القائمة", value=True, key="fault_type_multiselect_check")
+        selected_fault_types = []
+        custom_fault_type = ""
+        if use_multiselect:
+            if fault_type_options:
+                selected_fault_types = st.multiselect("اختر نوع العطل (يمكن اختيار أكثر من واحد):", fault_type_options, key="fault_type_multiselect")
+            else:
+                st.info("لا توجد أنواع أعطال مسجلة مسبقاً.")
+        else:
+            custom_fault_type = st.text_input("أو اكتب نوع العطل المطلوب (مطابقة تامة أو جزئية):", key="custom_fault_type_input", placeholder="مثال: كهربائي, ميكانيكي...")
+        # ====================================
+        
         st.markdown("#### نطاق التاريخ")
         use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter_failures")
         if use_date_filter:
@@ -1156,6 +1184,19 @@ def search_across_sheets(all_sheets):
                         mask_tech = df_filtered[tech_col].astype(str).str.contains(technician_search, case=False, na=False)
                         df_filtered = df_filtered[mask_tech]
                 
+                # ===== تطبيق فلتر نوع العطل =====
+                if use_multiselect and selected_fault_types:
+                    if "نوع العطل" in df_filtered.columns:
+                        # استخدام contains مع أي من الأنواع المختارة
+                        pattern = '|'.join(selected_fault_types)
+                        mask_fault = df_filtered["نوع العطل"].astype(str).str.contains(pattern, case=False, na=False)
+                        df_filtered = df_filtered[mask_fault]
+                elif custom_fault_type:
+                    if "نوع العطل" in df_filtered.columns:
+                        mask_fault = df_filtered["نوع العطل"].astype(str).str.contains(custom_fault_type, case=False, na=False)
+                        df_filtered = df_filtered[mask_fault]
+                # ==================================
+                
                 if not df_filtered.empty:
                     df_filtered["القسم"] = sheet_name
                     results.append(df_filtered)
@@ -1201,6 +1242,8 @@ def search_across_sheets(all_sheets):
                                 st.markdown(f"**⚠️ العطل:** {str(row.get('الحدث/العطل', ''))[:150]}")
                                 st.markdown(f"**🔧 الإجراء:** {str(row.get('الإجراء التصحيحي', ''))[:150]}")
                                 st.markdown(f"**👨‍🔧 تم بواسطة:** {row.get('تم بواسطة', '')}")
+                                # عرض نوع العطل في البطاقة
+                                st.markdown(f"**🏷️ نوع العطل:** {row.get('نوع العطل', '')}")
                                 if img_url:
                                     st.caption(f"[🔗 رابط الصورة]({img_url})")
                 
