@@ -1616,7 +1616,7 @@ def add_new_event(sheets_edit, sheet_name):
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
             # استخدام key فقط، وقراءة القيمة من session_state لاحقاً
             st.text_area("📝 الحدث/العطل:", height=100, key="event_desc_area")
-            fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "هوائي", "هيكلي", "آخر"])
+            fault_type = st.selectbox("🏷️ نوع العطل:", ["ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "سيرفيس", "صيانه", "آخر"])
             uploaded_image = st.file_uploader("🖼️ رفع صورة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
         with col2:
             st.text_area("🔧 الإجراء التصحيحي:", height=100, key="correction_desc_area")
