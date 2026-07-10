@@ -1520,15 +1520,16 @@ def add_new_event(sheets_edit, sheet_name):
     # اختيار الماكينة
     selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list, key="equipment_select")
     
-    # عند تغيير الماكينة، نمسح القيم المخزنة
+    # عند تغيير الماكينة، نمسح القيم المخزنة في session_state الخاصة بالحقول
     if "last_selected_equipment" not in st.session_state:
         st.session_state.last_selected_equipment = selected_equipment
     if st.session_state.last_selected_equipment != selected_equipment:
         st.session_state.last_selected_equipment = selected_equipment
-        st.session_state.event_desc_value = ""
-        st.session_state.correction_desc_value = ""
-        st.session_state.event_desc_area = ""
-        st.session_state.correction_desc_area = ""
+        # مسح المحتوى المخزن في حقول النص
+        if "event_desc_area" in st.session_state:
+            del st.session_state.event_desc_area
+        if "correction_desc_area" in st.session_state:
+            del st.session_state.correction_desc_area
 
     # استخراج الأعطال السابقة للماكينة المختارة
     df_equip = df[df["المعدة"] == selected_equipment]
@@ -1542,12 +1543,8 @@ def add_new_event(sheets_edit, sheet_name):
     selected_event_option = st.selectbox("اختر حدث/عطل سابق:", event_options, key="event_old_select")
 
     if selected_event_option != "-- اختر من السابق --":
-        st.session_state.event_desc_value = selected_event_option
-        st.session_state.event_desc_area = selected_event_option  # تحديث مباشر للنص
-    else:
-        if "event_desc_value" not in st.session_state or st.session_state.event_desc_value in previous_events:
-            st.session_state.event_desc_value = ""
-            st.session_state.event_desc_area = ""
+        # تعيين القيمة مباشرة في session_state المرتبط بـ text_area
+        st.session_state.event_desc_area = selected_event_option
 
     # استخراج الإجراءات التصحيحية السابقة
     previous_corrections = df_equip["الإجراء التصحيحي"].dropna().unique()
@@ -1560,12 +1557,7 @@ def add_new_event(sheets_edit, sheet_name):
     selected_correction_option = st.selectbox("اختر إجراء تصحيحي سابق:", correction_options, key="correction_old_select")
 
     if selected_correction_option != "-- اختر من السابق --":
-        st.session_state.correction_desc_value = selected_correction_option
         st.session_state.correction_desc_area = selected_correction_option
-    else:
-        if "correction_desc_value" not in st.session_state or st.session_state.correction_desc_value in previous_corrections:
-            st.session_state.correction_desc_value = ""
-            st.session_state.correction_desc_area = ""
 
     # تعريف متغيرات قطع الغيار بقيم افتراضية
     part_name = ""
@@ -1579,12 +1571,12 @@ def add_new_event(sheets_edit, sheet_name):
         with col1:
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
-            # text_area مع key لربط القيمة بـ session_state
-            st.text_area("📝 الحدث/العطل:", value=st.session_state.get("event_desc_value", ""), height=100, key="event_desc_area")
-            fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "سيرفيس", "صيانه", "آخر"])
+            # استخدام key فقط، وقراءة القيمة من session_state لاحقاً
+            st.text_area("📝 الحدث/العطل:", height=100, key="event_desc_area")
+            fault_type = st.selectbox("🏷️ نوع العطل:", ["", "ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "هوائي", "هيكلي", "آخر"])
             uploaded_image = st.file_uploader("🖼️ رفع صورة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
         with col2:
-            st.text_area("🔧 الإجراء التصحيحي:", value=st.session_state.get("correction_desc_value", ""), height=100, key="correction_desc_area")
+            st.text_area("🔧 الإجراء التصحيحي:", height=100, key="correction_desc_area")
             servised_by = st.text_input("👨‍🔧 تم بواسطة:")
             technician_rating = st.select_slider("⭐ قدرة الفني (حل/تفكير/مبادرة/قرار):", options=[1, 2, 3, 4, 5], value=3)
             safety_compliance = st.selectbox("🛡️ الالتزام بتعليمات السلامة:", ["", "ملتزم بالكامل", "ملتزم جزئياً", "غير ملتزم", "غير مطبق"])
@@ -1612,7 +1604,7 @@ def add_new_event(sheets_edit, sheet_name):
 
         submitted = st.form_submit_button("✅ إضافة الحدث", type="primary")
         if submitted:
-            # قراءة القيم من session_state المرتبطة بـ text_area
+            # قراءة القيم من session_state الخاصة بالـ text_area
             event_desc = st.session_state.get("event_desc_area", "")
             correction_desc = st.session_state.get("correction_desc_area", "")
 
@@ -1674,11 +1666,11 @@ def add_new_event(sheets_edit, sheet_name):
             if save_and_push_to_github(sheets_edit, commit_message):
                 st.cache_data.clear()
                 log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
-                # مسح القيم المخزنة
-                st.session_state.event_desc_value = ""
-                st.session_state.correction_desc_value = ""
-                st.session_state.event_desc_area = ""
-                st.session_state.correction_desc_area = ""
+                # مسح القيم المخزنة في session_state (حذف المفاتيح)
+                if "event_desc_area" in st.session_state:
+                    del st.session_state.event_desc_area
+                if "correction_desc_area" in st.session_state:
+                    del st.session_state.correction_desc_area
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
                 if warning_msg:
                     st.warning(warning_msg)
