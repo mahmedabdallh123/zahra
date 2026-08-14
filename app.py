@@ -469,10 +469,16 @@ def admin_users_management_tab():
                     st.error("❌ فشل حفظ المستخدم الجديد")
 
 # ------------------------------- دوال سجل النشاطات -------------------------------
-def log_activity(action_type, details, username=None):
+def log_activity(action_type, details, username=None, section=None):
     if username is None:
         username = st.session_state.get("username", "غير معروف")
-    log_entry = {"timestamp": datetime.now().isoformat(), "username": username, "action_type": action_type, "details": details}
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "username": username,
+        "action_type": action_type,
+        "details": details,
+        "section": section  # إضافة حقل القسم
+    }
     log = []
     if os.path.exists(ACTIVITY_LOG_FILE):
         try:
@@ -481,8 +487,9 @@ def log_activity(action_type, details, username=None):
         except:
             log = []
     log.append(log_entry)
-    if len(log) > 100:
-        log = log[-100:]
+    # الاحتفاظ بآخر 200 سجل فقط لتجنب كبر حجم الملف
+    if len(log) > 200:
+        log = log[-200:]
     with open(ACTIVITY_LOG_FILE, "w", encoding="utf-8") as f:
         json.dump(log, f, indent=2, ensure_ascii=False)
     if GITHUB_AVAILABLE:
@@ -498,6 +505,42 @@ def log_activity(action_type, details, username=None):
         except:
             pass
 
+def clean_old_activity_log(days_to_keep=1):
+    """
+    تحذف الإشعارات الأقدم من days_to_keep يوم.
+    يتم استدعاؤها تلقائياً عند تحميل التطبيق.
+    """
+    log = load_activity_log()
+    if not log:
+        return
+    cutoff = datetime.now() - timedelta(days=days_to_keep)
+    new_log = []
+    for entry in log:
+        try:
+            entry_time = datetime.fromisoformat(entry["timestamp"])
+            if entry_time >= cutoff:
+                new_log.append(entry)
+        except:
+            # إذا كان التنسيق غير صحيح، نحتفظ بها
+            new_log.append(entry)
+    if len(new_log) != len(log):
+        # حفظ السجل الجديد (ملف محلياً)
+        with open(ACTIVITY_LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(new_log, f, indent=2, ensure_ascii=False)
+        # رفع إلى GitHub إن أمكن
+        if GITHUB_AVAILABLE:
+            try:
+                g = Github(GITHUB_TOKEN)
+                repo = g.get_repo(APP_CONFIG["REPO_NAME"])
+                content = json.dumps(new_log, indent=2, ensure_ascii=False)
+                try:
+                    contents = repo.get_contents(ACTIVITY_LOG_FILE, ref=APP_CONFIG["BRANCH"])
+                    repo.update_file(ACTIVITY_LOG_FILE, "تنظيف السجل القديم", content, contents.sha, branch=APP_CONFIG["BRANCH"])
+                except:
+                    repo.create_file(ACTIVITY_LOG_FILE, "إنشاء سجل النشاطات", content, branch=APP_CONFIG["BRANCH"])
+            except:
+                pass
+
 def load_activity_log():
     if GITHUB_AVAILABLE:
         try:
@@ -506,14 +549,18 @@ def load_activity_log():
             contents = repo.get_contents(ACTIVITY_LOG_FILE, ref=APP_CONFIG["BRANCH"])
             import base64
             content = base64.b64decode(contents.content).decode('utf-8')
-            return json.loads(content)
+            log = json.loads(content)
+            # ترتيب تنازلي (الأحدث أولاً)
+            log.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            return log
         except:
             pass
     if os.path.exists(ACTIVITY_LOG_FILE):
         with open(ACTIVITY_LOG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            log = json.load(f)
+            log.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            return log
     return []
-
 # ------------------------------- دوال الصيانة الوقائية -------------------------------
 def load_maintenance_tasks():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
@@ -556,7 +603,7 @@ def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, start_
     }])
     new_df = pd.concat([df, new_row], ignore_index=True)
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = new_df
-    log_activity("add_maintenance_task", f"تم إضافة بند صيانة '{task_name}' للماكينة {equipment} (فترة {period_hours} ساعة)")
+    log_activity("add_maintenance_task", f"تم إضافة بند صيانة '{task_name}' للماكينة {equipment} (فترة {period_hours} ساعة)", section=equipment)  # أو تمرير القسم كمعامل
     return sheets_edit
 
 def get_upcoming_maintenance(days_ahead=3):
@@ -1515,7 +1562,7 @@ def add_new_department(sheets_edit):
                             st.info(f"🗑️ تم حذف قطع الغيار التابعة للقسم '{selected_dept}'.")
                         del sheets_edit[selected_dept]
                         if save_and_push_to_github(sheets_edit, f"حذف قسم: {selected_dept}"):
-                            log_activity("delete_section", f"تم حذف القسم '{selected_dept}' وقطع الغيار التابعة له")
+                            log_activity("delete_section", f"تم حذف القسم '{selected_dept}' وقطع الغيار التابعة له", section=selected_dept)
                             st.success(f"✅ تم حذف القسم '{selected_dept}' بنجاح!")
                             st.cache_data.clear()
                             st.rerun()
@@ -1770,7 +1817,7 @@ def add_new_event(sheets_edit, sheet_name):
 
             if save_and_push_to_github(sheets_edit, commit_message):
                 st.cache_data.clear()
-                log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
+                log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}", section=sheet_name)
                 if "event_desc_area" in st.session_state:
                     del st.session_state.event_desc_area
                 if "correction_desc_area" in st.session_state:
@@ -1822,7 +1869,7 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
         new_entry += f" | صورة: {image_url}"
     df.loc[idx, "ملاحظات"] = (old_notes + "\n" + new_entry).strip()
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
-    log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}")
+    log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}", section=section_name)
     result_msg = f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
     return True, result_msg
 
@@ -1904,7 +1951,7 @@ def manage_spare_parts_tab(sheets_edit):
                         spare_df.loc[original_idx, "حد_الإنذار"] = new_threshold
                         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                         if save_and_push_to_github(sheets_edit, f"تعديل قطعة: {selected_part_name}"):
-                            log_activity("add_spare_part", f"تم تعديل قطعة غيار '{selected_part_name}' للقسم {selected_section}")
+                           log_activity("add_spare_part", f"تم إضافة قطعة غيار '{part_name}' للقسم {selected_section} (الرصيد: {initial_qty})", section=selected_section)
                             st.success("تم التعديل")
                             st.rerun()
                 if st.button("🗑️ حذف هذه القطعة", key="delete_part_btn"):
@@ -2581,103 +2628,142 @@ with tabs[idx]:
 idx += 1
 
 with tabs[idx]:
-    st.header("🔔 الإشعارات")
-    if st.session_state.get("username") == "admin":
-        st.subheader("📋 آخر النشاطات")
-        activity_log = load_activity_log()
-        if activity_log:
-            for entry in reversed(activity_log[-20:]):
-                timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
-                action_type = entry["action_type"]
-                username_act = entry["username"]
-                details = entry["details"]
-                if action_type == "add_event":
-                    icon = "🆕"
-                elif action_type == "execute_maintenance":
-                    icon = "✅"
-                elif action_type == "add_spare_part":
-                    icon = "🔩"
-                elif action_type == "add_maintenance_task":
-                    icon = "🛠️"
-                else:
-                    icon = "📌"
-                st.info(f"{icon} **{timestamp}** - **{username_act}**: {details}")
+    st.header("🔔 الإشعارات والتنبيهات")
+    
+    # تنظيف الإشعارات الأقدم من 24 ساعة
+    clean_old_activity_log(days_to_keep=1)
+    
+    username = st.session_state.get("username")
+    user_role = st.session_state.get("user_role", "viewer")
+    all_sheets = load_all_sheets()
+    
+    # الحصول على قائمة الأقسام التي يسمح للمستخدم برؤيتها
+    allowed_sections = get_allowed_sections(all_sheets, username, "view")
+    
+    # ------------------------------------------------------------------
+    # 1. عرض آخر الأحداث (آخر 5 إدخالات في سجل النشاطات)
+    # ------------------------------------------------------------------
+    st.subheader("📋 آخر الأحداث المسجلة")
+    activity_log = load_activity_log()
+    
+    # تصفية السجل بناءً على صلاحيات المستخدم
+    filtered_log = []
+    for entry in activity_log:
+        section = entry.get("section", "")
+        # إذا كان المستخدم أدمن، يرى كل شيء
+        if username == "admin" or user_role == "admin":
+            filtered_log.append(entry)
         else:
-            st.info("لا توجد نشاطات مسجلة بعد.")
-        st.markdown("---")
+            # إذا لم يكن هناك قسم محدد في الإدخال، نعتبره عام ويمكن عرضه
+            if not section or section in allowed_sections:
+                filtered_log.append(entry)
+    
+    # عرض آخر 5 إدخالات فقط
+    recent_log = filtered_log[:5]
+    
+    if recent_log:
+        for entry in recent_log:
+            timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+            action_type = entry.get("action_type", "حدث")
+            username_act = entry.get("username", "غير معروف")
+            details = entry.get("details", "")
+            section = entry.get("section", "")
+            
+            # اختيار الأيقونة حسب نوع الحدث
+            if action_type == "add_event":
+                icon = "🆕"
+            elif action_type == "execute_maintenance":
+                icon = "✅"
+            elif action_type == "add_spare_part":
+                icon = "🔩"
+            elif action_type == "add_maintenance_task":
+                icon = "🛠️"
+            elif action_type == "delete_section":
+                icon = "🗑️"
+            else:
+                icon = "📌"
+            
+            section_display = f" (قسم: {section})" if section else ""
+            st.info(f"{icon} **{timestamp}** - **{username_act}**{section_display}: {details}")
+    else:
+        st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
+    
+    # ------------------------------------------------------------------
+    # 2. عرض تنبيهات قطع الغيار الحرجة (لكل الأقسام المسموح بها)
+    # ------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("⚠️ قطع غيار حرجة")
+    critical = get_critical_spare_parts()
+    # تصفية القطع حسب الأقسام المسموح بها
+    if username != "admin" and user_role != "admin":
+        critical = [part for part in critical if part.get("القسم", "") in allowed_sections]
+    
+    if critical:
+        for part in critical:
+            threshold = part.get('حد_الإنذار', 1)
+            section_name = part.get('القسم', 'غير محدد')
+            st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {section_name}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+    else:
+        st.success("✅ لا توجد قطع غيار حرجة في الأقسام المسموح بها.")
+    
+    # ------------------------------------------------------------------
+    # 3. عرض تنبيهات الصيانة الوقائية (المستحقة والقادمة)
+    # ------------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🔧 تنبيهات الصيانة الوقائية")
+    
+    # الحصول على قائمة الماكينات في الأقسام المسموح بها
+    allowed_equipment = []
+    for sheet_name in allowed_sections:
+        if sheet_name in all_sheets:
+            df = all_sheets[sheet_name]
+            if "المعدة" in df.columns:
+                allowed_equipment.extend(df["المعدة"].dropna().unique())
+    allowed_equipment = [str(eq).strip() for eq in allowed_equipment if str(eq).strip() != ""]
+    
+    overdue, upcoming = get_upcoming_maintenance(3)
+    
+    # تصفية الصيانة حسب الماكينات المسموح بها
+    if username != "admin" and user_role != "admin":
+        overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
+        upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
+    
     col1, col2 = st.columns(2)
+    
     with col1:
-        st.subheader("⚠️ قطع غيار حرجة")
-        critical = get_critical_spare_parts()
-        if critical:
-            for part in critical:
-                threshold = part.get('حد_الإنذار', 1)
-                st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {part.get('القسم', 'غير محدد')}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
-        else:
-            st.success("✅ لا توجد قطع غيار حرجة")
-    with col2:
-        st.subheader("🔧 صيانة مستحقة")
-        overdue, upcoming = get_upcoming_maintenance(3)
+        st.markdown("#### 🟡 صيانة متأخرة")
         if not overdue.empty:
-            st.warning("🟡 صيانة متأخرة:")
             for _, row in overdue.iterrows():
-                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (تاريخ مستحق: {row['التاريخ_التالي'].strftime('%Y-%m-%d')})")
+                eq = row['المعدة']
+                task = row['اسم_البند']
+                due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+                # محاولة إيجاد القسم للماكينة
+                section = "غير محدد"
+                for sheet_name in allowed_sections:
+                    if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                        section = sheet_name
+                        break
+                st.warning(f"⚠️ **{eq}** (قسم: {section}) - {task} (مستحق: {due_date})")
         else:
-            st.info("✅ لا توجد صيانات متأخرة")
+            st.info("✅ لا توجد صيانات متأخرة في الأقسام المسموح بها.")
+    
+    with col2:
+        st.markdown("#### 🟢 صيانة قادمة خلال 3 أيام")
         if not upcoming.empty:
-            st.info("🟢 صيانة قادمة خلال 3 أيام:")
             for _, row in upcoming.iterrows():
+                eq = row['المعدة']
+                task = row['اسم_البند']
                 days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-                st.write(f"- {row['المعدة']}: {row['اسم_البند']} (بعد {days} يوم)")
+                due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+                section = "غير محدد"
+                for sheet_name in allowed_sections:
+                    if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                        section = sheet_name
+                        break
+                st.info(f"🔹 **{eq}** (قسم: {section}) - {task} (بعد {days} يوم - {due_date})")
         else:
-            st.info("✅ لا توجد صيانات قادمة")
+            st.info("✅ لا توجد صيانات قادمة في الأقسام المسموح بها.")
 idx += 1
-
-if can_add_event:
-    with tabs[idx]:
-        if sheets_edit:
-            allowed_for_add = []
-            for sheet_name in sheets_edit.keys():
-                if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
-                    continue
-                if has_section_permission(username, sheet_name, "add_event"):
-                    allowed_for_add.append(sheet_name)
-            if allowed_for_add:
-                sheet_name = st.selectbox("اختر القسم:", allowed_for_add, key="add_event_sheet_main")
-                sheets_edit = add_new_event(sheets_edit, sheet_name)
-            else:
-                st.warning("لا توجد أقسام مسموح لك بإضافة أحداث فيها.")
-        else:
-            st.warning("لا توجد بيانات")
-    idx += 1
-
-if can_manage_machines:
-    with tabs[idx]:
-        if sheets_edit:
-            allowed_for_machines = []
-            for sheet_name in sheets_edit.keys():
-                if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
-                    continue
-                if has_section_permission(username, sheet_name, "manage_machines"):
-                    allowed_for_machines.append(sheet_name)
-            if allowed_for_machines:
-                sheet_name = st.selectbox("اختر القسم:", allowed_for_machines, key="manage_machines_sheet_main")
-                manage_machines(sheets_edit, sheet_name, unique_suffix="main")
-            else:
-                st.warning("لا توجد أقسام مسموح لك بإدارة الماكينات فيها.")
-        else:
-            st.warning("لا توجد بيانات")
-    idx += 1
-
-if can_edit_data:
-    with tabs[idx]:
-        sheets_edit = manage_data_edit(sheets_edit)
-    idx += 1
-
-if username == "admin":
-    with tabs[idx]:
-        admin_users_management_tab()
-    idx += 1
 
 with tabs[idx]:
     st.header("📞 الدعم الفني")
