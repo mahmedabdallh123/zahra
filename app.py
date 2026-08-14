@@ -588,7 +588,7 @@ def get_tasks_for_equipment(equipment_name):
         return df
     return df[df["المعدة"] == equipment_name]
 
-def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, start_date=None, notes="", default_spare="", image_url=None):
+def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, start_date=None, notes="", default_spare="", image_url=None, section=None):
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
     df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]]
@@ -603,9 +603,20 @@ def add_maintenance_task(sheets_edit, equipment, task_name, period_hours, start_
     }])
     new_df = pd.concat([df, new_row], ignore_index=True)
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = new_df
-    log_activity("add_maintenance_task", f"تم إضافة بند صيانة '{task_name}' للماكينة {equipment} (فترة {period_hours} ساعة)", section=equipment)  # أو تمرير القسم كمعامل
-    return sheets_edit
 
+    # حساب القسم إذا لم يتم تمريره
+    if section is None:
+        for sheet_name, sh_df in sheets_edit.items():
+            if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+                continue
+            if equipment in get_equipment_list_from_sheet(sh_df):
+                section = sheet_name
+                break
+        if section is None:
+            section = "غير محدد"
+
+    log_activity("add_maintenance_task", f"تم إضافة بند صيانة '{task_name}' للماكينة {equipment} (فترة {period_hours} ساعة)", section=section)
+    return sheets_edit
 def get_upcoming_maintenance(days_ahead=3):
     df = load_maintenance_tasks()
     if df.empty:
@@ -1830,7 +1841,7 @@ def add_new_event(sheets_edit, sheet_name):
                 st.error("❌ فشل الحفظ")
     return sheets_edit
 # ------------------------------- دوال مساعدة للصيانة الوقائية -------------------------------
-def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
+def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None, section=None):
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = pd.DataFrame(columns=APP_CONFIG["MAINTENANCE_COLUMNS"])
     df = sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]]
@@ -1842,12 +1853,11 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
     idx = df[mask].index[0]
     period_days = df.loc[idx, "الفترة_بالأيام"]
 
-    # --------------------- منع تكرار التنفيذ في نفس التاريخ فقط ---------------------
+    # منع تكرار التنفيذ في نفس التاريخ
     last_exec = df.loc[idx, "آخر_تنفيذ"]
     if pd.notna(last_exec) and hasattr(last_exec, 'date'):
         if last_exec.date() == execution_date:
             return False, f"⚠️ تم تنفيذ صيانة '{task_name}' للمعدة '{equipment_name}' بالفعل في هذا التاريخ ({execution_date.strftime('%Y-%m-%d')}). لتسجيل تكرار، قم بتغيير التاريخ."
-    # ------------------------------------------------------------------------------
 
     df.loc[idx, "آخر_تنفيذ"] = pd.to_datetime(execution_date)
     next_date = execution_date + timedelta(days=period_days)
@@ -1869,7 +1879,19 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
         new_entry += f" | صورة: {image_url}"
     df.loc[idx, "ملاحظات"] = (old_notes + "\n" + new_entry).strip()
     sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = df
-    log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}", section=section_name)
+
+    # حساب القسم إذا لم يتم تمريره
+    if section is None:
+        for sheet_name, sh_df in sheets_edit.items():
+            if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+                continue
+            if equipment_name in get_equipment_list_from_sheet(sh_df):
+                section = sheet_name
+                break
+        if section is None:
+            section = "غير محدد"
+
+    log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}", section=section)
     result_msg = f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
     return True, result_msg
 
@@ -2253,7 +2275,7 @@ def preventive_maintenance_tab(sheets_edit):
                         if execution_image:
                             maint_id = str(uuid.uuid4())[:8]
                             image_url = upload_image_to_github(execution_image, "maintenance_execution", maint_id)
-                        success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
+                       success, msg = execute_maintenance_with_date(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url, section=selected_section)
                         if success:
                             if link_to_event:
                                 event_success, event_msg = add_maintenance_as_event(sheets_edit, selected_equipment, selected_task, execution_date, performed_by, part_name, consume_qty, image_url)
@@ -2297,7 +2319,7 @@ def preventive_maintenance_tab(sheets_edit):
                 if task_image:
                     task_id = str(uuid.uuid4())[:8]
                     image_url = upload_image_to_github(task_image, "maintenance_task", task_id)
-                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_name, period_hours, start_date, notes, default_spare, image_url)
+                sheets_edit = add_maintenance_task(sheets_edit, selected_equipment, task_name, period_hours, start_date, notes, default_spare, image_url, section=selected_section)
                 if save_and_push_to_github(sheets_edit, f"إضافة بند صيانة '{task_name}'"):
                     st.success("✅ تم إضافة البند بنجاح")
                     st.rerun()
