@@ -1,11 +1,5 @@
 [
   {
-    "timestamp": "2026-05-11T08:18:01.645614",
-    "username": "admin",
-    "action_type": "add_maintenance_task",
-    "details": "تم إضافة بند صيانة 'تغير جرائد اماميه550' للماكينة كرد16 (فترة 7100 ساعة)"
-  },
-  {
     "timestamp": "2026-05-11T08:18:33.428564",
     "username": "admin",
     "action_type": "add_maintenance_task",
@@ -598,5 +592,11 @@
     "username": "admin",
     "action_type": "execute_maintenance",
     "details": "تم تنفيذ صيانة ' فحص عيارات ومسافات رولين الكويلر والديليفري الخاصين بسير المسنن' للماكينة كرد1 بواسطة ي"
+  },
+  {
+    "timestamp": "2026-08-14T18:50:50.717272",
+    "username": "admin",
+    "action_type": "add_event",
+    "details": "تم إضافة عطل: ش للماكينة 7.5موتورkw"
   }
 ]
