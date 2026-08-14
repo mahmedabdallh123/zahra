@@ -2273,27 +2273,23 @@ def manage_data_edit(sheets_edit):
         st.subheader("🗂️ عرض وتعديل بيانات الأقسام")
         st.info("🔍 يمكنك البحث والفلترة (بالنص، التاريخ، الماكينة) ثم تعديل البيانات مباشرة. يتم الحفظ والرفع إلى GitHub تلقائياً عند الضغط على '💾 حفظ التغييرات'.")
         
-        # الحصول على قائمة الأقسام (باستثناء شيتات النظام)
         dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
         if not dept_names:
             st.info("لا توجد أقسام بعد")
             return sheets_edit
         
-        # اختيار القسم
         selected_dept = st.selectbox("🏭 اختر القسم:", dept_names, key="edit_dept_select")
         df_original = sheets_edit[selected_dept].copy()
         
         # ---------- أدوات الفلترة والبحث ----------
         st.markdown("### 🔎 فلترة البيانات")
         
-        # صف الفلاتر (4 أعمدة: بحث، ماكينة، تاريخ، زر مسح)
         col_f1, col_f2, col_f3, col_f4 = st.columns([2, 2, 2, 1])
         
         with col_f1:
             search_text = st.text_input("🔍 بحث عام (في جميع الأعمدة):", placeholder="أدخل كلمة بحث...", key="search_text_edit")
         
         with col_f2:
-            # فلتر الماكينة
             equipment_list = get_equipment_list_from_sheet(df_original)
             equipment_options = ["الكل"] + equipment_list
             selected_equipment = st.selectbox("🔧 فلتر الماكينة:", equipment_options, key="equipment_filter_edit")
@@ -2301,7 +2297,6 @@ def manage_data_edit(sheets_edit):
         with col_f3:
             use_date_filter = st.checkbox("📅 فلتر بالتاريخ", key="use_date_filter_edit")
             if use_date_filter:
-                # اختيار عمود التاريخ (أول عمود يحتوي على "تاريخ" أو "date")
                 date_col_candidates = [col for col in df_original.columns if "تاريخ" in col or "date" in col.lower()]
                 if date_col_candidates:
                     date_col = st.selectbox("عمود التاريخ:", date_col_candidates, key="date_col_edit")
@@ -2312,15 +2307,13 @@ def manage_data_edit(sheets_edit):
                 date_col = None
         
         with col_f4:
-            st.write("")  # فراغ للتوازن
+            st.write("")
             if st.button("🔄 مسح الفلاتر", key="clear_filters_edit"):
-                # إعادة تعيين قيم الفلاتر في session_state
                 for key in ["search_text_edit", "equipment_filter_edit", "use_date_filter_edit", "start_date_edit", "end_date_edit"]:
                     if key in st.session_state:
                         st.session_state[key] = None if key != "equipment_filter_edit" else "الكل"
                 st.rerun()
         
-        # حقول تاريخ من - إلى (تظهر فقط إذا تم تفعيل فلتر التاريخ)
         if use_date_filter and date_col:
             col_f5, col_f6 = st.columns(2)
             with col_f5:
@@ -2334,19 +2327,16 @@ def manage_data_edit(sheets_edit):
         # ---------- تطبيق الفلاتر ----------
         df_filtered = df_original.copy()
         
-        # 1. فلتر الماكينة
         if selected_equipment != "الكل" and "المعدة" in df_filtered.columns:
             df_filtered = df_filtered[df_filtered["المعدة"] == selected_equipment]
         
-        # 2. فلتر البحث النصي
         if search_text:
             mask = pd.Series([False] * len(df_filtered))
             for col in df_filtered.columns:
-                if col not in ["رابط الصورة", "رابط_الصورة"]:  # تجاهل أعمدة الصور لتجنب مشاكل الأداء
+                if col not in ["رابط الصورة", "رابط_الصورة"]:
                     mask |= df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
             df_filtered = df_filtered[mask]
         
-        # 3. فلتر التاريخ
         if use_date_filter and date_col and start_date and end_date:
             try:
                 df_filtered[date_col] = pd.to_datetime(df_filtered[date_col], errors='coerce')
@@ -2356,7 +2346,7 @@ def manage_data_edit(sheets_edit):
             except Exception as e:
                 st.warning(f"⚠️ خطأ في فلترة التاريخ: {e}")
         
-        # عرض عدد النتائج وإحصائيات سريعة
+        # إحصائيات سريعة
         col_stat1, col_stat2, col_stat3 = st.columns(3)
         with col_stat1:
             st.metric("📊 إجمالي السجلات", len(df_original))
@@ -2376,21 +2366,16 @@ def manage_data_edit(sheets_edit):
         display_cols = [col for col in df_filtered.columns if col not in ["رابط الصورة", "رابط_الصورة"]]
         df_display = df_filtered[display_cols].copy()
         
-        # عرض محرر البيانات مع دعم الأعمدة التاريخية
-        column_config = {}
-        for col in df_display.columns:
-            if "تاريخ" in col or "date" in col.lower():
-                column_config[col] = st.column_config.DateColumn(col, format="YYYY-MM-DD")
-            elif "مده" in col or "مدة" in col or "amount" in col.lower() or "qty" in col.lower():
-                column_config[col] = st.column_config.NumberColumn(col, format="%.1f")
+        # 🔧 تحويل جميع البيانات إلى نصوص لتجنب أخطاء الأنواع في data_editor
+        df_display = df_display.astype(str).replace('nan', '').replace('None', '')
         
+        # عرض محرر البيانات بدون column_config (لتجنب التعقيدات)
         edited_df = st.data_editor(
             df_display,
             num_rows="dynamic",
             use_container_width=True,
             height=500,
-            key=f"editor_{selected_dept}",
-            column_config=column_config
+            key=f"editor_{selected_dept}"
         )
         
         # عرض الصور المرفقة (إن وجدت)
@@ -2443,7 +2428,6 @@ def manage_data_edit(sheets_edit):
                     st.error(f"❌ خطأ في حفظ البيانات: {e}")
         
         with col_btn2:
-            # تصدير البيانات المفلترة
             excel_file = export_filtered_results_to_excel(df_filtered, selected_dept)
             st.download_button(
                 "📥 تحميل المفلتر (Excel)",
@@ -2454,7 +2438,6 @@ def manage_data_edit(sheets_edit):
             )
         
         with col_btn3:
-            # تصدير جميع البيانات (بدون فلتر)
             all_excel = export_sheet_to_excel({selected_dept: df_original}, selected_dept)
             st.download_button(
                 "📥 تحميل الكل (Excel)",
@@ -2465,7 +2448,6 @@ def manage_data_edit(sheets_edit):
             )
         
         with col_btn4:
-            # تصدير كامل ملف Excel (جميع الأقسام)
             full_excel = export_all_sheets_to_excel(sheets_edit)
             st.download_button(
                 "📥 تحميل الكل (جميع الأقسام)",
@@ -2480,7 +2462,6 @@ def manage_data_edit(sheets_edit):
         st.warning("⚠️ لحذف صفوف محددة، استخدم زر 'Delete' (السلة 🗑️) في كل صف داخل محرر البيانات، ثم اضغط '💾 حفظ التغييرات'.")
         st.info("💡 يمكنك أيضاً حذف جميع البيانات عبر تحديد الصفوف ثم الضغط على 'Delete Rows' في المحرر.")
         
-        # عرض إحصائيات مفصلة
         with st.expander("📊 إحصائيات مفصلة للقسم"):
             col_stat_a, col_stat_b = st.columns(2)
             with col_stat_a:
@@ -2505,7 +2486,6 @@ def manage_data_edit(sheets_edit):
                     for fault, count in top_faults.items():
                         st.write(f"- {fault}: {count}")
     
-    # باقي التبويبات كما هي (لم نعدلها)
     with tabs_edit[1]:
         if sheets_edit:
             sheet_name = st.selectbox("اختر القسم:", [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]], key="manage_machines_sheet_edit")
