@@ -207,7 +207,42 @@ def get_critical_spare_parts():
     critical = df[(df["ضرورية"] == "نعم") & (df["الرصيد الموجود"] < df["حد_الإنذار"])]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
+def is_duplicate_event(df, new_row, check_columns=None):
+    """
+    تتحقق مما إذا كان الصف الجديد مكررًا في DataFrame بناءً على أعمدة محددة.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        البيانات الموجودة في القسم
+    new_row : dict
+        الصف الجديد المراد إضافته
+    check_columns : list, optional
+        قائمة بأسماء الأعمدة المستخدمة في المقارنة (افتراضي: التاريخ، المعدة، الحدث/العطل، الإجراء التصحيحي)
+    
+    Returns:
+    --------
+    bool : True إذا كان هناك تطابق تام (مكرر)، False إذا لم يتكرر
+    """
+    if df.empty:
+        return False
 
+    # الأعمدة الافتراضية للتحقق من تكرار العطل
+    if check_columns is None:
+        check_columns = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي"]
+
+    # تصفية الأعمدة الموجودة بالفعل في df وفي new_row
+    available_cols = [col for col in check_columns if col in df.columns and col in new_row]
+    if not available_cols:
+        return False  # لا يمكن التحقق، نعتبر غير مكرر
+
+    # بناء Mask للمقارنة (كل الأعمدة متساوية)
+    mask = pd.Series([True] * len(df))
+    for col in available_cols:
+        # تنظيف البيانات من المسافات الزائدة ومقارنة السلاسل النصية
+        mask &= (df[col].astype(str).str.strip() == str(new_row.get(col, "")).strip())
+
+    return mask.any()
 # ------------------------------- دوال إدارة المستخدمين من داخل التطبيق -------------------------------
 def load_users_from_github():
     """تحميل users.json من GitHub مباشرة مع معالجة الصلاحيات"""
@@ -1586,7 +1621,6 @@ def add_new_event(sheets_edit, sheet_name):
     selected_event_option = st.selectbox("اختر حدث/عطل سابق:", event_options, key="event_old_select")
 
     if selected_event_option != "-- اختر من السابق --":
-        # تعيين القيمة مباشرة في session_state المرتبط بـ text_area
         st.session_state.event_desc_area = selected_event_option
 
     # استخراج الإجراءات التصحيحية السابقة
@@ -1614,7 +1648,6 @@ def add_new_event(sheets_edit, sheet_name):
         with col1:
             event_date = st.date_input("📅 التاريخ:", value=datetime.now())
             repair_duration = st.number_input("⏱️ مدة الإصلاح (ساعات):", min_value=0.0, step=0.5, format="%.1f")
-            # استخدام key فقط، وقراءة القيمة من session_state لاحقاً
             st.text_area("📝 الحدث/العطل:", height=100, key="event_desc_area")
             fault_type = st.selectbox("🏷️ نوع العطل:", ["ميكانيكي", "كهربائي", "إلكتروني", "هيدروليكي", "سيرفيس", "صيانه", "آخر"])
             uploaded_image = st.file_uploader("🖼️ رفع صورة (اختياري):", type=APP_CONFIG["ALLOWED_IMAGE_TYPES"])
@@ -1695,6 +1728,12 @@ def add_new_event(sheets_edit, sheet_name):
                 if col not in new_row:
                     new_row[col] = ""
 
+            # --------------------- منع التكرار (الجزء المضاف) ---------------------
+            if is_duplicate_event(df, new_row):
+                st.warning("⚠️ هذا العطل مسجل مسبقاً لنفس المعدة والتاريخ والوصف. لم يتم إضافة مكرر.")
+                return sheets_edit  # الخروج دون إضافة المكرر
+            # -------------------------------------------------------------------
+
             new_row_df = pd.DataFrame([new_row])
             df_new = pd.concat([df, new_row_df], ignore_index=True)
             sheets_edit[sheet_name] = df_new
@@ -1709,7 +1748,7 @@ def add_new_event(sheets_edit, sheet_name):
             if save_and_push_to_github(sheets_edit, commit_message):
                 st.cache_data.clear()
                 log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
-                # مسح القيم المخزنة في session_state (حذف المفاتيح)
+                # مسح القيم المخزنة في session_state
                 if "event_desc_area" in st.session_state:
                     del st.session_state.event_desc_area
                 if "correction_desc_area" in st.session_state:
@@ -1733,6 +1772,14 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
         return False, f"المهمة '{task_name}' غير موجودة للمعدة '{equipment_name}'"
     idx = df[mask].index[0]
     period_days = df.loc[idx, "الفترة_بالأيام"]
+
+    # --------------------- منع التكرار (الجزء المضاف) ---------------------
+    last_exec = df.loc[idx, "آخر_تنفيذ"]
+    if pd.notna(last_exec) and hasattr(last_exec, 'date'):
+        if last_exec.date() == execution_date:
+            return False, f"⚠️ تم تنفيذ صيانة '{task_name}' للمعدة '{equipment_name}' بالفعل في هذا التاريخ ({execution_date.strftime('%Y-%m-%d')})."
+    # -------------------------------------------------------------------
+
     df.loc[idx, "آخر_تنفيذ"] = pd.to_datetime(execution_date)
     next_date = execution_date + timedelta(days=period_days)
     df.loc[idx, "التاريخ_التالي"] = next_date
