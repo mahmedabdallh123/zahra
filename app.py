@@ -207,42 +207,71 @@ def get_critical_spare_parts():
     critical = df[(df["ضرورية"] == "نعم") & (df["الرصيد الموجود"] < df["حد_الإنذار"])]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
-def is_duplicate_event(df, new_row, check_columns=None):
+def is_duplicate_event(df, new_row, compare_columns=None, ignore_columns=None, time_window_days=0):
     """
-    تتحقق مما إذا كان الصف الجديد مكررًا في DataFrame بناءً على أعمدة محددة.
-    
+    تتحقق مما إذا كان الصف الجديد مكررًا في DataFrame مع مرونة في:
+    - تحديد أعمدة المقارنة
+    - تجاهل أعمدة معينة
+    - تحديد فترة سماح زمنية (بالأيام) للسماح بتكرار قريب
+
     Parameters:
     -----------
     df : pandas.DataFrame
         البيانات الموجودة في القسم
     new_row : dict
         الصف الجديد المراد إضافته
-    check_columns : list, optional
-        قائمة بأسماء الأعمدة المستخدمة في المقارنة (افتراضي: التاريخ، المعدة، الحدث/العطل، الإجراء التصحيحي)
-    
+    compare_columns : list, optional
+        قائمة بأسماء الأعمدة المستخدمة في المقارنة (افتراضي: التاريخ، المعدة، الحدث/العطل، الإجراء التصحيحي، تم بواسطة)
+    ignore_columns : list, optional
+        قائمة بأسماء الأعمدة التي سيتم تجاهلها من المقارنة (حتى لو وُجدت في compare_columns)
+    time_window_days : int, optional
+        عدد الأيام المسموح فيها التكرار (0 يعني منع التكرار في نفس اليوم فقط، 
+        إذا كانت القيمة أكبر من 0، سيتم اعتبار السجلات التي تاريخها ضمن هذه الفترة مكررة محتملة)
+
     Returns:
     --------
-    bool : True إذا كان هناك تطابق تام (مكرر)، False إذا لم يتكرر
+    bool : True إذا كان هناك تطابق (مكرر محتمل) مع مراعاة الفترة الزمنية، False otherwise.
     """
     if df.empty:
         return False
 
-    # الأعمدة الافتراضية للتحقق من تكرار العطل
-    if check_columns is None:
-        check_columns = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي"]
+    # الأعمدة الافتراضية للمقارنة (تشمل "تم بواسطة" للتحقق من تغيير الفني)
+    default_compare = ["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة"]
+    if compare_columns is None:
+        compare_columns = default_compare
+    else:
+        # دمج القائمة الافتراضية مع القائمة المقدمة (لضمان وجود الأعمدة الأساسية)
+        compare_columns = list(set(default_compare + compare_columns))
 
-    # تصفية الأعمدة الموجودة بالفعل في df وفي new_row
-    available_cols = [col for col in check_columns if col in df.columns and col in new_row]
+    # إزالة الأعمدة المطلوب تجاهلها
+    if ignore_columns:
+        compare_columns = [col for col in compare_columns if col not in ignore_columns]
+
+    # تصفية الأعمدة الموجودة فعلياً في df و new_row
+    available_cols = [col for col in compare_columns if col in df.columns and col in new_row]
     if not available_cols:
-        return False  # لا يمكن التحقق، نعتبر غير مكرر
+        return False
 
-    # بناء Mask للمقارنة (كل الأعمدة متساوية)
+    # بناء Mask للمقارنة
     mask = pd.Series([True] * len(df))
     for col in available_cols:
-        # تنظيف البيانات من المسافات الزائدة ومقارنة السلاسل النصية
         mask &= (df[col].astype(str).str.strip() == str(new_row.get(col, "")).strip())
 
-    return mask.any()
+    # إذا كان هناك تطابق في الأعمدة، نتحقق من التاريخ إذا كان time_window_days > 0
+    if mask.any() and time_window_days > 0 and "التاريخ" in df.columns and "التاريخ" in new_row:
+        new_date = pd.to_datetime(new_row["التاريخ"]).date()
+        matching_rows = df[mask].copy()
+        if not matching_rows.empty:
+            matching_rows["تاريخ_فقط"] = pd.to_datetime(matching_rows["التاريخ"]).dt.date
+            date_diff = (new_date - matching_rows["تاريخ_فقط"]).abs()
+            if (date_diff <= timedelta(days=time_window_days)).any():
+                return True
+            else:
+                return False
+    else:
+        return mask.any()
+
+    return False
 # ------------------------------- دوال إدارة المستخدمين من داخل التطبيق -------------------------------
 def load_users_from_github():
     """تحميل users.json من GitHub مباشرة مع معالجة الصلاحيات"""
@@ -1595,21 +1624,17 @@ def add_new_event(sheets_edit, sheet_name):
         st.warning("⚠ لا توجد ماكينات مسجلة في هذا القسم. يرجى إضافة ماكينة أولاً من تبويب 'إدارة الماكينات'")
         return sheets_edit
 
-    # اختيار الماكينة
     selected_equipment = st.selectbox("🔧 اختر الماكينة:", equipment_list, key="equipment_select")
     
-    # عند تغيير الماكينة، نمسح القيم المخزنة في session_state الخاصة بالحقول
     if "last_selected_equipment" not in st.session_state:
         st.session_state.last_selected_equipment = selected_equipment
     if st.session_state.last_selected_equipment != selected_equipment:
         st.session_state.last_selected_equipment = selected_equipment
-        # مسح المحتوى المخزن في حقول النص
         if "event_desc_area" in st.session_state:
             del st.session_state.event_desc_area
         if "correction_desc_area" in st.session_state:
             del st.session_state.correction_desc_area
 
-    # استخراج الأعطال السابقة للماكينة المختارة
     df_equip = df[df["المعدة"] == selected_equipment]
     previous_events = df_equip["الحدث/العطل"].dropna().unique()
     previous_events = [str(e).strip() for e in previous_events if str(e).strip() != ""]
@@ -1623,7 +1648,6 @@ def add_new_event(sheets_edit, sheet_name):
     if selected_event_option != "-- اختر من السابق --":
         st.session_state.event_desc_area = selected_event_option
 
-    # استخراج الإجراءات التصحيحية السابقة
     previous_corrections = df_equip["الإجراء التصحيحي"].dropna().unique()
     previous_corrections = [str(c).strip() for c in previous_corrections if str(c).strip() != ""]
     
@@ -1636,7 +1660,6 @@ def add_new_event(sheets_edit, sheet_name):
     if selected_correction_option != "-- اختر من السابق --":
         st.session_state.correction_desc_area = selected_correction_option
 
-    # تعريف متغيرات قطع الغيار بقيم افتراضية
     part_name = ""
     consume_qty = 0
     warning_msg = ""
@@ -1680,11 +1703,9 @@ def add_new_event(sheets_edit, sheet_name):
 
         submitted = st.form_submit_button("✅ إضافة الحدث", type="primary")
         if submitted:
-            # قراءة القيم من session_state الخاصة بالـ text_area
             event_desc = st.session_state.get("event_desc_area", "")
             correction_desc = st.session_state.get("correction_desc_area", "")
 
-            # استهلاك قطعة الغيار إذا تم اختيارها
             spare_part_used = ""
             if part_name and consume_qty > 0:
                 success, msg, new_qty = consume_spare_part(part_name, consume_qty)
@@ -1699,7 +1720,6 @@ def add_new_event(sheets_edit, sheet_name):
                     st.error(msg)
                     return sheets_edit
 
-            # رفع الصورة (اختياري)
             image_url = None
             if uploaded_image is not None:
                 event_id = str(uuid.uuid4())[:8]
@@ -1709,7 +1729,6 @@ def add_new_event(sheets_edit, sheet_name):
                 else:
                     st.warning("⚠️ فشل رفع الصورة، سيتم حفظ الحدث بدون صورة")
 
-            # إنشاء الصف الجديد
             new_row = {
                 "مده الاصلاح": repair_duration if repair_duration > 0 else "",
                 "التاريخ": event_date.strftime("%Y-%m-%d"),
@@ -1723,22 +1742,26 @@ def add_new_event(sheets_edit, sheet_name):
                 "الالتزام بتعليمات السلامة": safety_compliance if safety_compliance else "",
                 "رابط الصورة": image_url or ""
             }
-            # إضافة الأعمدة المفقودة
             for col in df.columns:
                 if col not in new_row:
                     new_row[col] = ""
 
-            # --------------------- منع التكرار (الجزء المضاف) ---------------------
-            if is_duplicate_event(df, new_row):
-                st.warning("⚠️ هذا العطل مسجل مسبقاً لنفس المعدة والتاريخ والوصف. لم يتم إضافة مكرر.")
-                return sheets_edit  # الخروج دون إضافة المكرر
-            # -------------------------------------------------------------------
+            # --------------------- التحقق من التكرار (يشمل "تم بواسطة") ---------------------
+            if is_duplicate_event(
+                df, 
+                new_row, 
+                compare_columns=["التاريخ", "المعدة", "الحدث/العطل", "الإجراء التصحيحي", "تم بواسطة"],
+                ignore_columns=[],  # لا نتجاهل أي عمود
+                time_window_days=1   # يمنع التكرار خلال يوم واحد إذا تطابقت كل الأعمدة
+            ):
+                st.warning("⚠️ هذا العطل مسجل مسبقاً لنفس المعدة والإجراء والفني خلال اليوم الماضي. لتسجيل تكرار، قم بتغيير الفني أو الإجراء أو التاريخ.")
+                return sheets_edit
+            # ----------------------------------------------------------------------------
 
             new_row_df = pd.DataFrame([new_row])
             df_new = pd.concat([df, new_row_df], ignore_index=True)
             sheets_edit[sheet_name] = df_new
 
-            # تحديث قطع الغيار إذا تم التعديل
             if "temp_spare_parts_df" in st.session_state:
                 sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = st.session_state.temp_spare_parts_df
                 del st.session_state.temp_spare_parts_df
@@ -1748,7 +1771,6 @@ def add_new_event(sheets_edit, sheet_name):
             if save_and_push_to_github(sheets_edit, commit_message):
                 st.cache_data.clear()
                 log_activity("add_event", f"تم إضافة عطل: {event_desc[:50]} للماكينة {selected_equipment}")
-                # مسح القيم المخزنة في session_state
                 if "event_desc_area" in st.session_state:
                     del st.session_state.event_desc_area
                 if "correction_desc_area" in st.session_state:
@@ -1773,12 +1795,12 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
     idx = df[mask].index[0]
     period_days = df.loc[idx, "الفترة_بالأيام"]
 
-    # --------------------- منع التكرار (الجزء المضاف) ---------------------
+    # --------------------- منع تكرار التنفيذ في نفس التاريخ فقط ---------------------
     last_exec = df.loc[idx, "آخر_تنفيذ"]
     if pd.notna(last_exec) and hasattr(last_exec, 'date'):
         if last_exec.date() == execution_date:
-            return False, f"⚠️ تم تنفيذ صيانة '{task_name}' للمعدة '{equipment_name}' بالفعل في هذا التاريخ ({execution_date.strftime('%Y-%m-%d')})."
-    # -------------------------------------------------------------------
+            return False, f"⚠️ تم تنفيذ صيانة '{task_name}' للمعدة '{equipment_name}' بالفعل في هذا التاريخ ({execution_date.strftime('%Y-%m-%d')}). لتسجيل تكرار، قم بتغيير التاريخ."
+    # ------------------------------------------------------------------------------
 
     df.loc[idx, "آخر_تنفيذ"] = pd.to_datetime(execution_date)
     next_date = execution_date + timedelta(days=period_days)
