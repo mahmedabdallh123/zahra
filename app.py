@@ -2366,10 +2366,9 @@ def manage_data_edit(sheets_edit):
         display_cols = [col for col in df_filtered.columns if col not in ["رابط الصورة", "رابط_الصورة"]]
         df_display = df_filtered[display_cols].copy()
         
-        # 🔧 تحويل جميع البيانات إلى نصوص لتجنب أخطاء الأنواع في data_editor
+        # تحويل جميع البيانات إلى نصوص لتجنب أخطاء الأنواع في data_editor
         df_display = df_display.astype(str).replace('nan', '').replace('None', '')
         
-        # عرض محرر البيانات بدون column_config (لتجنب التعقيدات)
         edited_df = st.data_editor(
             df_display,
             num_rows="dynamic",
@@ -2378,7 +2377,7 @@ def manage_data_edit(sheets_edit):
             key=f"editor_{selected_dept}"
         )
         
-        # عرض الصور المرفقة (إن وجدت)
+        # عرض الصور المرفقة (مع معالجة الأخطاء)
         img_col = None
         if "رابط الصورة" in df_filtered.columns:
             img_col = "رابط الصورة"
@@ -2388,6 +2387,7 @@ def manage_data_edit(sheets_edit):
         if img_col:
             with st.expander("🖼️ عرض الصور المرفقة"):
                 cols_per_row = 4
+                # عرض أول 20 صورة فقط لتجنب التحميل الزائد
                 for i in range(0, min(len(df_filtered), 20), cols_per_row):
                     row_cols = st.columns(cols_per_row)
                     for j, col in enumerate(row_cols):
@@ -2397,22 +2397,25 @@ def manage_data_edit(sheets_edit):
                             img_url = row.get(img_col, "")
                             if img_url and isinstance(img_url, str) and img_url.strip():
                                 with col:
-                                    st.image(img_url, caption=f"الصف {idx+1}", width=150)
+                                    try:
+                                        st.image(img_url, caption=f"الصف {idx+1}", width=150)
+                                    except Exception as e:
+                                        st.caption(f"⚠️ تعذر عرض الصورة: [رابط]({img_url})")
+                            else:
+                                with col:
+                                    st.write("📄 لا توجد صورة")
         
         # أزرار الحفظ والتصدير
         col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
         with col_btn1:
             if st.button("💾 حفظ التغييرات", key=f"save_edit_{selected_dept}", type="primary"):
                 try:
-                    # دمج التعديلات مع البيانات الأصلية
                     merged_df = df_original.copy()
-                    # تحديث الصفوف الموجودة
                     for idx in df_filtered.index:
                         if idx in edited_df.index:
                             for col in edited_df.columns:
                                 if col in merged_df.columns:
                                     merged_df.loc[idx, col] = edited_df.loc[idx, col]
-                    # إضافة الصفوف الجديدة
                     new_rows = edited_df[~edited_df.index.isin(df_filtered.index)]
                     if not new_rows.empty:
                         merged_df = pd.concat([merged_df, new_rows], ignore_index=True)
