@@ -1912,6 +1912,7 @@ def manage_spare_parts_tab(sheets_edit):
     else:
         st.warning("⚠️ لا توجد أقسام مسموح لك بالوصول إليها.")
         return sheets_edit
+
     selected_section = st.selectbox("🏭 اختر القسم:", allowed_sections, key="spare_section")
     spare_df = load_spare_parts()
     view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="spare_view_mode")
@@ -1920,12 +1921,14 @@ def manage_spare_parts_tab(sheets_edit):
     filtered_df.reset_index(drop=False, inplace=True)
     filtered_df.rename(columns={'index': 'original_index'}, inplace=True)
     filtered_df["id"] = filtered_df.index
+
     if filtered_df.empty:
         st.info(f"لا توجد قطع غيار مسجلة للقسم '{selected_section}'.")
     else:
         part_name_filter = st.text_input("فلتر حسب اسم القطعة:", placeholder="اكتب جزءاً من الاسم...", key="spare_name_filter")
         if part_name_filter:
             filtered_df = filtered_df[filtered_df["اسم القطعة"].str.contains(part_name_filter, case=False, na=False)]
+
         if view_mode == "جدول":
             display_cols = [c for c in filtered_df.columns if c not in ["original_index", "id", "رابط_الصورة"]]
             st.dataframe(filtered_df[display_cols], use_container_width=True)
@@ -1951,7 +1954,7 @@ def manage_spare_parts_tab(sheets_edit):
                         spare_df.loc[original_idx, "حد_الإنذار"] = new_threshold
                         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = spare_df
                         if save_and_push_to_github(sheets_edit, f"تعديل قطعة: {selected_part_name}"):
-                           log_activity("add_spare_part", f"تم إضافة قطعة غيار '{part_name}' للقسم {selected_section} (الرصيد: {initial_qty})", section=selected_section)
+                            log_activity("add_spare_part", f"تم تعديل قطعة غيار '{selected_part_name}' للقسم {selected_section}", section=selected_section)
                             st.success("تم التعديل")
                             st.rerun()
                 if st.button("🗑️ حذف هذه القطعة", key="delete_part_btn"):
@@ -1961,7 +1964,7 @@ def manage_spare_parts_tab(sheets_edit):
                     if save_and_push_to_github(sheets_edit, f"حذف قطعة: {selected_part_name}"):
                         st.success("تم الحذف")
                         st.rerun()
-        else:
+        else:  # عرض البطاقات
             cols_per_row = 2
             for i in range(0, len(filtered_df), cols_per_row):
                 row_cols = st.columns(cols_per_row)
@@ -2018,7 +2021,8 @@ def manage_spare_parts_tab(sheets_edit):
                                                 st.rerun()
                                             else:
                                                 st.error("فشل الحفظ")
-        st.subheader("➕ إضافة قطعة غيار جديدة")
+
+    st.subheader("➕ إضافة قطعة غيار جديدة")
     with st.form(key="add_spare_part_form"):
         col1, col2 = st.columns(2)
         with col1:
@@ -2060,13 +2064,12 @@ def manage_spare_parts_tab(sheets_edit):
                     new_spare_df = pd.concat([spare_df, new_row], ignore_index=True)
                     sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = new_spare_df
                     if save_and_push_to_github(sheets_edit, f"إضافة قطعة غيار: {part_name} للقسم {selected_section}"):
-                        log_activity("add_spare_part", f"تم إضافة قطعة غيار '{part_name}' للقسم {selected_section} (الرصيد: {initial_qty})")
+                        log_activity("add_spare_part", f"تم إضافة قطعة غيار '{part_name}' للقسم {selected_section} (الرصيد: {initial_qty})", section=selected_section)
                         st.success("✅ تمت إضافة قطعة الغيار")
                         st.rerun()
                     else:
                         st.error("❌ فشل الحفظ")
     return sheets_edit
-
 def preventive_maintenance_tab(sheets_edit):
     st.header("🛠 الصيانة الوقائية")
     st.info("إدارة بنود الصيانة الدورية. يتم حفظ البيانات تلقائياً في ملف Excel.")
