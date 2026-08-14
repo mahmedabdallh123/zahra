@@ -1,11 +1,5 @@
 [
   {
-    "timestamp": "2026-05-11T08:18:57.371795",
-    "username": "admin",
-    "action_type": "add_maintenance_task",
-    "details": "تم إضافة بند صيانة 'تغير جرائد اماميه550' للماكينة كرد14 (فترة 7100 ساعة)"
-  },
-  {
     "timestamp": "2026-05-11T08:19:26.213476",
     "username": "admin",
     "action_type": "add_maintenance_task",
@@ -598,5 +592,11 @@
     "username": "admin",
     "action_type": "add_event",
     "details": "تم إضافة عطل: ش للماكينة 7.5موتورkw"
+  },
+  {
+    "timestamp": "2026-08-14T18:53:24.202917",
+    "username": "admin",
+    "action_type": "execute_maintenance",
+    "details": "تم تنفيذ صيانة 'تغير اول جريده 240' للماكينة كرد10 بواسطة س"
   }
 ]
