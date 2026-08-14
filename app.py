@@ -2260,44 +2260,267 @@ def manage_data_edit(sheets_edit):
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
         return sheets_edit
+    
     if APP_CONFIG["SPARE_PARTS_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["SPARE_PARTS_SHEET"]] = load_spare_parts()
     if APP_CONFIG["MAINTENANCE_SHEET"] not in sheets_edit:
         sheets_edit[APP_CONFIG["MAINTENANCE_SHEET"]] = load_maintenance_tasks()
-    tab_names = ["📋 عرض الأقسام", "🔧 إدارة الماكينات", "➕ إضافة قسم جديد", "📦 قطع الغيار", "🛠 الصيانة الوقائية"]
+    
+    tab_names = ["📋 عرض وتعديل الأقسام", "🔧 إدارة الماكينات", "➕ إضافة قسم جديد", "📦 قطع الغيار", "🛠 الصيانة الوقائية"]
     tabs_edit = st.tabs(tab_names)
+    
     with tabs_edit[0]:
-        st.subheader("جميع الأقسام")
-        if sheets_edit:
-            dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
-            if dept_names:
-                dept_tabs = st.tabs(dept_names)
-                for i, dept_name in enumerate(dept_names):
-                    with dept_tabs[i]:
-                        df = sheets_edit[dept_name]
-                        display_sheet_data(dept_name, df, f"view_{dept_name}", sheets_edit)
-                        with st.expander("✏️ تعديل مباشر للبيانات", expanded=False):
-                            edited_df = st.data_editor(df.astype(str), num_rows="dynamic", use_container_width=True, key=f"editor_{dept_name}")
-                            if st.button(f"💾 حفظ", key=f"save_{dept_name}"):
-                                sheets_edit[dept_name] = edited_df.astype(object)
-                                if save_and_push_to_github(sheets_edit, f"تعديل بيانات في قسم {dept_name}"):
-                                    st.cache_data.clear()
-                                    st.success("تم الحفظ والرفع إلى GitHub!")
-                                    st.rerun()
+        st.subheader("🗂️ عرض وتعديل بيانات الأقسام")
+        st.info("🔍 يمكنك البحث والفلترة (بالنص، التاريخ، الماكينة) ثم تعديل البيانات مباشرة. يتم الحفظ والرفع إلى GitHub تلقائياً عند الضغط على '💾 حفظ التغييرات'.")
+        
+        # الحصول على قائمة الأقسام (باستثناء شيتات النظام)
+        dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
+        if not dept_names:
+            st.info("لا توجد أقسام بعد")
+            return sheets_edit
+        
+        # اختيار القسم
+        selected_dept = st.selectbox("🏭 اختر القسم:", dept_names, key="edit_dept_select")
+        df_original = sheets_edit[selected_dept].copy()
+        
+        # ---------- أدوات الفلترة والبحث ----------
+        st.markdown("### 🔎 فلترة البيانات")
+        
+        # صف الفلاتر (4 أعمدة: بحث، ماكينة، تاريخ، زر مسح)
+        col_f1, col_f2, col_f3, col_f4 = st.columns([2, 2, 2, 1])
+        
+        with col_f1:
+            search_text = st.text_input("🔍 بحث عام (في جميع الأعمدة):", placeholder="أدخل كلمة بحث...", key="search_text_edit")
+        
+        with col_f2:
+            # فلتر الماكينة
+            equipment_list = get_equipment_list_from_sheet(df_original)
+            equipment_options = ["الكل"] + equipment_list
+            selected_equipment = st.selectbox("🔧 فلتر الماكينة:", equipment_options, key="equipment_filter_edit")
+        
+        with col_f3:
+            use_date_filter = st.checkbox("📅 فلتر بالتاريخ", key="use_date_filter_edit")
+            if use_date_filter:
+                # اختيار عمود التاريخ (أول عمود يحتوي على "تاريخ" أو "date")
+                date_col_candidates = [col for col in df_original.columns if "تاريخ" in col or "date" in col.lower()]
+                if date_col_candidates:
+                    date_col = st.selectbox("عمود التاريخ:", date_col_candidates, key="date_col_edit")
+                else:
+                    date_col = None
+                    st.warning("⚠️ لا يوجد عمود تاريخ في هذا القسم")
             else:
-                st.info("لا توجد أقسام بعد")
+                date_col = None
+        
+        with col_f4:
+            st.write("")  # فراغ للتوازن
+            if st.button("🔄 مسح الفلاتر", key="clear_filters_edit"):
+                # إعادة تعيين قيم الفلاتر في session_state
+                for key in ["search_text_edit", "equipment_filter_edit", "use_date_filter_edit", "start_date_edit", "end_date_edit"]:
+                    if key in st.session_state:
+                        st.session_state[key] = None if key != "equipment_filter_edit" else "الكل"
+                st.rerun()
+        
+        # حقول تاريخ من - إلى (تظهر فقط إذا تم تفعيل فلتر التاريخ)
+        if use_date_filter and date_col:
+            col_f5, col_f6 = st.columns(2)
+            with col_f5:
+                start_date = st.date_input("من تاريخ:", value=None, key="start_date_edit")
+            with col_f6:
+                end_date = st.date_input("إلى تاريخ:", value=None, key="end_date_edit")
+        else:
+            start_date = None
+            end_date = None
+        
+        # ---------- تطبيق الفلاتر ----------
+        df_filtered = df_original.copy()
+        
+        # 1. فلتر الماكينة
+        if selected_equipment != "الكل" and "المعدة" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["المعدة"] == selected_equipment]
+        
+        # 2. فلتر البحث النصي
+        if search_text:
+            mask = pd.Series([False] * len(df_filtered))
+            for col in df_filtered.columns:
+                if col not in ["رابط الصورة", "رابط_الصورة"]:  # تجاهل أعمدة الصور لتجنب مشاكل الأداء
+                    mask |= df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
+            df_filtered = df_filtered[mask]
+        
+        # 3. فلتر التاريخ
+        if use_date_filter and date_col and start_date and end_date:
+            try:
+                df_filtered[date_col] = pd.to_datetime(df_filtered[date_col], errors='coerce')
+                df_filtered = df_filtered.dropna(subset=[date_col])
+                mask_date = (df_filtered[date_col] >= pd.to_datetime(start_date)) & (df_filtered[date_col] <= pd.to_datetime(end_date) + timedelta(days=1))
+                df_filtered = df_filtered[mask_date]
+            except Exception as e:
+                st.warning(f"⚠️ خطأ في فلترة التاريخ: {e}")
+        
+        # عرض عدد النتائج وإحصائيات سريعة
+        col_stat1, col_stat2, col_stat3 = st.columns(3)
+        with col_stat1:
+            st.metric("📊 إجمالي السجلات", len(df_original))
+        with col_stat2:
+            st.metric("🔍 السجلات بعد الفلترة", len(df_filtered))
+        with col_stat3:
+            if "المعدة" in df_filtered.columns:
+                st.metric("🏭 ماكينات فريدة", df_filtered["المعدة"].nunique())
+            else:
+                st.metric("🏭 ماكينات فريدة", "-")
+        
+        # ---------- تعديل البيانات ----------
+        st.markdown("### ✏️ تعديل البيانات")
+        st.caption("💡 يمكنك تعديل الخلايا مباشرة، وإضافة صفوف جديدة من خلال 'Add Row' في أسفل الجدول. لحذف صف، اضغط على أيقونة السلة 🗑️.")
+        
+        # إزالة عمود الصورة لتسهيل العرض
+        display_cols = [col for col in df_filtered.columns if col not in ["رابط الصورة", "رابط_الصورة"]]
+        df_display = df_filtered[display_cols].copy()
+        
+        # عرض محرر البيانات مع دعم الأعمدة التاريخية
+        column_config = {}
+        for col in df_display.columns:
+            if "تاريخ" in col or "date" in col.lower():
+                column_config[col] = st.column_config.DateColumn(col, format="YYYY-MM-DD")
+            elif "مده" in col or "مدة" in col or "amount" in col.lower() or "qty" in col.lower():
+                column_config[col] = st.column_config.NumberColumn(col, format="%.1f")
+        
+        edited_df = st.data_editor(
+            df_display,
+            num_rows="dynamic",
+            use_container_width=True,
+            height=500,
+            key=f"editor_{selected_dept}",
+            column_config=column_config
+        )
+        
+        # عرض الصور المرفقة (إن وجدت)
+        img_col = None
+        if "رابط الصورة" in df_filtered.columns:
+            img_col = "رابط الصورة"
+        elif "رابط_الصورة" in df_filtered.columns:
+            img_col = "رابط_الصورة"
+        
+        if img_col:
+            with st.expander("🖼️ عرض الصور المرفقة"):
+                cols_per_row = 4
+                for i in range(0, min(len(df_filtered), 20), cols_per_row):
+                    row_cols = st.columns(cols_per_row)
+                    for j, col in enumerate(row_cols):
+                        idx = i + j
+                        if idx < len(df_filtered):
+                            row = df_filtered.iloc[idx]
+                            img_url = row.get(img_col, "")
+                            if img_url and isinstance(img_url, str) and img_url.strip():
+                                with col:
+                                    st.image(img_url, caption=f"الصف {idx+1}", width=150)
+        
+        # أزرار الحفظ والتصدير
+        col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
+        with col_btn1:
+            if st.button("💾 حفظ التغييرات", key=f"save_edit_{selected_dept}", type="primary"):
+                try:
+                    # دمج التعديلات مع البيانات الأصلية
+                    merged_df = df_original.copy()
+                    # تحديث الصفوف الموجودة
+                    for idx in df_filtered.index:
+                        if idx in edited_df.index:
+                            for col in edited_df.columns:
+                                if col in merged_df.columns:
+                                    merged_df.loc[idx, col] = edited_df.loc[idx, col]
+                    # إضافة الصفوف الجديدة
+                    new_rows = edited_df[~edited_df.index.isin(df_filtered.index)]
+                    if not new_rows.empty:
+                        merged_df = pd.concat([merged_df, new_rows], ignore_index=True)
+                    
+                    sheets_edit[selected_dept] = merged_df
+                    if save_and_push_to_github(sheets_edit, f"تعديل بيانات في قسم {selected_dept}"):
+                        st.cache_data.clear()
+                        st.success("✅ تم حفظ التغييرات ورفعها إلى GitHub!")
+                        st.rerun()
+                    else:
+                        st.error("❌ فشل الحفظ")
+                except Exception as e:
+                    st.error(f"❌ خطأ في حفظ البيانات: {e}")
+        
+        with col_btn2:
+            # تصدير البيانات المفلترة
+            excel_file = export_filtered_results_to_excel(df_filtered, selected_dept)
+            st.download_button(
+                "📥 تحميل المفلتر (Excel)",
+                excel_file,
+                f"{selected_dept}_filtered_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"export_filtered_{selected_dept}"
+            )
+        
+        with col_btn3:
+            # تصدير جميع البيانات (بدون فلتر)
+            all_excel = export_sheet_to_excel({selected_dept: df_original}, selected_dept)
+            st.download_button(
+                "📥 تحميل الكل (Excel)",
+                all_excel,
+                f"{selected_dept}_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"export_all_{selected_dept}"
+            )
+        
+        with col_btn4:
+            # تصدير كامل ملف Excel (جميع الأقسام)
+            full_excel = export_all_sheets_to_excel(sheets_edit)
+            st.download_button(
+                "📥 تحميل الكل (جميع الأقسام)",
+                full_excel,
+                f"all_sheets_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="export_full_all"
+            )
+        
+        st.markdown("---")
+        st.subheader("🗑️ حذف بيانات محددة")
+        st.warning("⚠️ لحذف صفوف محددة، استخدم زر 'Delete' (السلة 🗑️) في كل صف داخل محرر البيانات، ثم اضغط '💾 حفظ التغييرات'.")
+        st.info("💡 يمكنك أيضاً حذف جميع البيانات عبر تحديد الصفوف ثم الضغط على 'Delete Rows' في المحرر.")
+        
+        # عرض إحصائيات مفصلة
+        with st.expander("📊 إحصائيات مفصلة للقسم"):
+            col_stat_a, col_stat_b = st.columns(2)
+            with col_stat_a:
+                st.write(f"**📌 عدد السجلات:** {len(df_original)}")
+                st.write(f"**🏭 عدد الماكينات الفريدة:** {df_original['المعدة'].nunique() if 'المعدة' in df_original.columns else 'غير متاح'}")
+                if "المعدة" in df_original.columns:
+                    st.write("**📋 الماكينات الأكثر تكراراً:**")
+                    top_eq = df_original["المعدة"].value_counts().head(5)
+                    for eq, count in top_eq.items():
+                        st.write(f"- {eq}: {count} سجل")
+            with col_stat_b:
+                if "التاريخ" in df_original.columns:
+                    try:
+                        dates = pd.to_datetime(df_original["التاريخ"], errors='coerce')
+                        st.write(f"**📅 أقدم تاريخ:** {dates.min().strftime('%Y-%m-%d') if pd.notna(dates.min()) else 'غير متاح'}")
+                        st.write(f"**📅 أحدث تاريخ:** {dates.max().strftime('%Y-%m-%d') if pd.notna(dates.max()) else 'غير متاح'}")
+                    except:
+                        st.write("**📅 نطاق التواريخ:** غير متاح")
+                if "نوع العطل" in df_original.columns:
+                    st.write("**🏷️ أنواع الأعطال الشائعة:**")
+                    top_faults = df_original["نوع العطل"].value_counts().head(3)
+                    for fault, count in top_faults.items():
+                        st.write(f"- {fault}: {count}")
+    
+    # باقي التبويبات كما هي (لم نعدلها)
     with tabs_edit[1]:
         if sheets_edit:
             sheet_name = st.selectbox("اختر القسم:", [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]], key="manage_machines_sheet_edit")
             manage_machines(sheets_edit, sheet_name, unique_suffix=f"edit_{sheet_name}")
+    
     with tabs_edit[2]:
         sheets_edit = add_new_department(sheets_edit)
+    
     with tabs_edit[3]:
         sheets_edit = manage_spare_parts_tab(sheets_edit)
+    
     with tabs_edit[4]:
         sheets_edit = preventive_maintenance_tab(sheets_edit)
+    
     return sheets_edit
-
 # ------------------------------- الواجهة الرئيسية -------------------------------
 with st.sidebar:
     st.header("الجلسة")
