@@ -2843,10 +2843,9 @@ with tabs[idx]:
     else:
         st.info("✅ لا توجد صيانات متأخرة في الأقسام المسموح بها.")
     
-    with col2:
+   with col2:
     st.markdown("#### 🟢 صيانة قادمة خلال 3 أيام")
     if not upcoming.empty:
-        ...
         upcoming_sections = []
         for eq in upcoming["المعدة"]:
             section = "غير محدد"
