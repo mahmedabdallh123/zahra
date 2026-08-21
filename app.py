@@ -2817,95 +2817,65 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-   col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown("#### 🟡 صيانة متأخرة")
-    if not overdue.empty:
-        overdue_sections = []
-        for eq in overdue["المعدة"]:
-            section = "غير محدد"
-            for sheet_name in allowed_sections:
-                if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                    section = sheet_name
-                    break
-            overdue_sections.append(section)
-        overdue["القسم"] = overdue_sections
-        overdue["تاريخ الاستحقاق"] = overdue["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
-        display_overdue = overdue[["المعدة", "اسم_البند", "القسم", "تاريخ الاستحقاق"]]
-        display_overdue = display_overdue.rename(columns={
-            "المعدة": "المعدة",
-            "اسم_البند": "البند",
-            "القسم": "القسم",
-            "تاريخ الاستحقاق": "تاريخ الاستحقاق"
-        })
-        st.dataframe(display_overdue, use_container_width=True, height=200)
-    else:
-        st.info("✅ لا توجد صيانات متأخرة في الأقسام المسموح بها.")
-
-with col2:
-    st.markdown("#### 🟢 صيانة قادمة خلال 3 أيام")
-    if not upcoming.empty:
-        upcoming_sections = []
-        for eq in upcoming["المعدة"]:
-            section = "غير محدد"
-            for sheet_name in allowed_sections:
-                if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                    section = sheet_name
-                    break
-            upcoming_sections.append(section)
-        upcoming["القسم"] = upcoming_sections
-        
-        today = datetime.now().date()
-        upcoming["التاريخ_التالي"] = pd.to_datetime(upcoming["التاريخ_التالي"])
-        upcoming["الأيام المتبقية"] = upcoming["التاريخ_التالي"].apply(
-            lambda x: (x.date() - today).days if pd.notna(x) else None
-        )
-        upcoming["تاريخ الاستحقاق"] = upcoming["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
-        
-        display_upcoming = upcoming[["المعدة", "اسم_البند", "القسم", "الأيام المتبقية", "تاريخ الاستحقاق"]]
-        display_upcoming = display_upcoming.rename(columns={
-            "المعدة": "المعدة",
-            "اسم_البند": "البند",
-            "القسم": "القسم",
-            "الأيام المتبقية": "الأيام المتبقية",
-            "تاريخ الاستحقاق": "تاريخ الاستحقاق"
-        })
-        st.dataframe(display_upcoming, use_container_width=True, height=200)
-    else:
-        st.info("✅ لا توجد صيانات قادمة في الأقسام المسموح بها.")
+    col1, col2 = st.columns(2)
     
-   with col2:
-    st.markdown("#### 🟢 صيانة قادمة خلال 3 أيام")
-    if not upcoming.empty:
-        upcoming_sections = []
-        for eq in upcoming["المعدة"]:
-            section = "غير محدد"
-            for sheet_name in allowed_sections:
-                if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                    section = sheet_name
-                    break
-            upcoming_sections.append(section)
-        upcoming["القسم"] = upcoming_sections
-        
-        today = datetime.now().date()
-        upcoming["التاريخ_التالي"] = pd.to_datetime(upcoming["التاريخ_التالي"])
-        upcoming["الأيام المتبقية"] = upcoming["التاريخ_التالي"].apply(
-            lambda x: (x.date() - today).days if pd.notna(x) else None
-        )
-        upcoming["تاريخ الاستحقاق"] = upcoming["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
-        
-        display_upcoming = upcoming[["المعدة", "اسم_البند", "القسم", "الأيام المتبقية", "تاريخ الاستحقاق"]]
-        display_upcoming = display_upcoming.rename(columns={
-            "المعدة": "المعدة",
-            "اسم_البند": "البند",
-            "القسم": "القسم",
-            "الأيام المتبقية": "الأيام المتبقية",
-            "تاريخ الاستحقاق": "تاريخ الاستحقاق"
-        })
-        st.dataframe(display_upcoming, use_container_width=True, height=200)
-    else:
-        st.info("✅ لا توجد صيانات قادمة في الأقسام المسموح بها.")
+    with col1:
+        st.markdown("#### 🟡 صيانة متأخرة")
+        if not overdue.empty:
+            overdue_sections = []
+            for eq in overdue["المعدة"]:
+                section = "غير محدد"
+                for sheet_name in allowed_sections:
+                    if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                        section = sheet_name
+                        break
+                overdue_sections.append(section)
+            overdue["القسم"] = overdue_sections
+            overdue["تاريخ الاستحقاق"] = overdue["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
+            display_overdue = overdue[["المعدة", "اسم_البند", "القسم", "تاريخ الاستحقاق"]]
+            display_overdue = display_overdue.rename(columns={
+                "المعدة": "المعدة",
+                "اسم_البند": "البند",
+                "القسم": "القسم",
+                "تاريخ الاستحقاق": "تاريخ الاستحقاق"
+            })
+            st.dataframe(display_overdue, use_container_width=True, height=200)
+        else:
+            st.info("✅ لا توجد صيانات متأخرة في الأقسام المسموح بها.")
+    
+    with col2:
+        st.markdown("#### 🟢 صيانة قادمة خلال 3 أيام")
+        if not upcoming.empty:
+            upcoming_sections = []
+            for eq in upcoming["المعدة"]:
+                section = "غير محدد"
+                for sheet_name in allowed_sections:
+                    if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                        section = sheet_name
+                        break
+                upcoming_sections.append(section)
+            upcoming["القسم"] = upcoming_sections
+            
+            today = datetime.now().date()
+            upcoming["التاريخ_التالي"] = pd.to_datetime(upcoming["التاريخ_التالي"])
+            upcoming["الأيام المتبقية"] = upcoming["التاريخ_التالي"].apply(
+                lambda x: (x.date() - today).days if pd.notna(x) else None
+            )
+            upcoming["تاريخ الاستحقاق"] = upcoming["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
+            
+            display_upcoming = upcoming[["المعدة", "اسم_البند", "القسم", "الأيام المتبقية", "تاريخ الاستحقاق"]]
+            display_upcoming = display_upcoming.rename(columns={
+                "المعدة": "المعدة",
+                "اسم_البند": "البند",
+                "القسم": "القسم",
+                "الأيام المتبقية": "الأيام المتبقية",
+                "تاريخ الاستحقاق": "تاريخ الاستحقاق"
+            })
+            st.dataframe(display_upcoming, use_container_width=True, height=200)
+        else:
+            st.info("✅ لا توجد صيانات قادمة في الأقسام المسموح بها.")
+idx += 1
+
 with tabs[idx]:
     st.header("📞 الدعم الفني")
     st.markdown("### تم تصميم وتنفيذ هذا السيستم بواسطه **م.محمد عبدالله**")
