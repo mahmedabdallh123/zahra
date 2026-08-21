@@ -539,6 +539,27 @@ def load_activity_log():
             return log
     return []
 
+def time_ago(timestamp_str):
+    """
+    تحسب الوقت المنقضي من timestamp_str حتى الآن وتعيده بصيغة مفهومة
+    """
+    try:
+        dt = datetime.fromisoformat(timestamp_str)
+        now = datetime.now()
+        diff = now - dt
+        
+        if diff.days > 0:
+            return f"{diff.days} يوم"
+        elif diff.seconds >= 3600:
+            hours = diff.seconds // 3600
+            return f"{hours} ساعة"
+        elif diff.seconds >= 60:
+            minutes = diff.seconds // 60
+            return f"{minutes} دقيقة"
+        else:
+            return "الآن"
+    except:
+        return ""
 # ------------------------------- دوال الصيانة الوقائية (معدلة) -------------------------------
 def load_maintenance_tasks():
     if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
@@ -2703,10 +2724,10 @@ with tabs[idx]:
     failures_analysis_tab(all_sheets)
 idx += 1
 
-# ------------------------------- تبويب الإشعارات (معدل) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
+    # تنظيف الإشعارات الأقدم من 24 ساعة
     clean_old_activity_log(days_to_keep=1)
     
     username = st.session_state.get("username")
@@ -2714,9 +2735,13 @@ with tabs[idx]:
     all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
+    # ----------------------------------------------------------------
+    # 1. عرض الإشعارات (آخر الأحداث) على هيئة جداول مصنفة حسب القسم
+    # ----------------------------------------------------------------
     st.subheader("📋 آخر الأحداث المسجلة")
     activity_log = load_activity_log()
     
+    # تصفية السجل بناءً على صلاحيات المستخدم
     filtered_log = []
     for entry in activity_log:
         section = entry.get("section", "")
@@ -2726,34 +2751,93 @@ with tabs[idx]:
             if not section or section in allowed_sections:
                 filtered_log.append(entry)
     
-    recent_log = filtered_log[:5]
-    
-    if recent_log:
-        for entry in recent_log:
-            timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
-            action_type = entry.get("action_type", "حدث")
-            username_act = entry.get("username", "غير معروف")
-            details = entry.get("details", "")
-            section = entry.get("section", "")
-            
-            if action_type == "add_event":
-                icon = "🆕"
-            elif action_type == "execute_maintenance":
-                icon = "✅"
-            elif action_type == "add_spare_part":
-                icon = "🔩"
-            elif action_type == "add_maintenance_task":
-                icon = "🛠️"
-            elif action_type == "delete_section":
-                icon = "🗑️"
-            else:
-                icon = "📌"
-            
-            section_display = f" (قسم: {section})" if section else ""
-            st.info(f"{icon} **{timestamp}** - **{username_act}**{section_display}: {details}")
-    else:
+    if not filtered_log:
         st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
+    else:
+        # تحويل القائمة إلى DataFrame
+        df_events = pd.DataFrame(filtered_log)
+        
+        # إضافة عمود الوقت المنقضي
+        df_events["منذ"] = df_events["timestamp"].apply(time_ago)
+        
+        # تنسيق التوقيت للعرض
+        df_events["التوقيت"] = pd.to_datetime(df_events["timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
+        
+        # اختيار الأيقونة حسب نوع الحدث
+        def get_icon(action_type):
+            icons = {
+                "add_event": "🆕",
+                "execute_maintenance": "✅",
+                "add_spare_part": "🔩",
+                "add_maintenance_task": "🛠️",
+                "delete_section": "🗑️"
+            }
+            return icons.get(action_type, "📌")
+        
+        df_events["الحدث"] = df_events["action_type"].apply(get_icon) + " " + df_events["action_type"].replace({
+            "add_event": "إضافة عطل",
+            "execute_maintenance": "تنفيذ صيانة",
+            "add_spare_part": "إضافة قطعة غيار",
+            "add_maintenance_task": "إضافة بند صيانة",
+            "delete_section": "حذف قسم"
+        }).fillna("حدث")
+        
+        # اختصار التفاصيل إذا كانت طويلة
+        df_events["التفاصيل"] = df_events["details"].apply(lambda x: x[:80] + "..." if len(str(x)) > 80 else x)
+        
+        # تحديد عمود القسم (تعويض القيم الفارغة)
+        df_events["القسم"] = df_events["section"].fillna("غير محدد")
+        
+        # اختيار الأعمدة المطلوبة للعرض
+        display_df = df_events[["التوقيت", "المستخدم", "الحدث", "التفاصيل", "القسم", "منذ"]]
+        
+        # ترتيب حسب القسم ثم التوقيت (الأحدث أولاً)
+        display_df = display_df.sort_values(by=["القسم", "التوقيت"], ascending=[True, False])
+        
+        # عرض الجدول الكامل
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            height=400,
+            column_config={
+                "التوقيت": st.column_config.TextColumn("التوقيت", width="small"),
+                "المستخدم": st.column_config.TextColumn("المستخدم", width="small"),
+                "الحدث": st.column_config.TextColumn("الحدث", width="medium"),
+                "التفاصيل": st.column_config.TextColumn("التفاصيل", width="large"),
+                "القسم": st.column_config.TextColumn("القسم", width="small"),
+                "منذ": st.column_config.TextColumn("منذ", width="small"),
+            }
+        )
+        
+        # عرض الإشعارات مصنفة حسب القسم (في أكورديونات)
+        st.markdown("---")
+        st.subheader("📂 تصنيف الإشعارات حسب القسم")
+        
+        # الحصول على قائمة الأقسام الفريدة
+        sections_list = sorted(display_df["القسم"].unique())
+        
+        for section in sections_list:
+            section_df = display_df[display_df["القسم"] == section]
+            with st.expander(f"📁 {section} ({len(section_df)} إشعار)", expanded=(section == "غير محدد" and len(section_df) > 0)):
+                if not section_df.empty:
+                    # عرض جدول مصغر لكل قسم (بدون عمود القسم لإلغاء التكرار)
+                    display_section = section_df.drop(columns=["القسم"])
+                    st.dataframe(
+                        display_section,
+                        use_container_width=True,
+                        height=min(300, len(display_section) * 35 + 38),
+                        column_config={
+                            "التوقيت": st.column_config.TextColumn("التوقيت", width="small"),
+                            "المستخدم": st.column_config.TextColumn("المستخدم", width="small"),
+                            "الحدث": st.column_config.TextColumn("الحدث", width="medium"),
+                            "التفاصيل": st.column_config.TextColumn("التفاصيل", width="large"),
+                            "منذ": st.column_config.TextColumn("منذ", width="small"),
+                        }
+                    )
     
+    # ----------------------------------------------------------------
+    # 2. تنبيهات قطع الغيار الحرجة
+    # ----------------------------------------------------------------
     st.markdown("---")
     st.subheader("⚠️ قطع غيار حرجة")
     critical = get_critical_spare_parts()
@@ -2761,13 +2845,29 @@ with tabs[idx]:
         critical = [part for part in critical if part.get("القسم", "") in allowed_sections]
     
     if critical:
-        for part in critical:
-            threshold = part.get('حد_الإنذار', 1)
-            section_name = part.get('القسم', 'غير محدد')
-            st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {section_name}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+        critical_df = pd.DataFrame(critical)
+        critical_df = critical_df.rename(columns={
+            "اسم القطعة": "القطعة",
+            "القسم": "القسم",
+            "الرصيد الموجود": "الرصيد",
+            "حد_الإنذار": "حد الإنذار"
+        })
+        st.dataframe(
+            critical_df,
+            use_container_width=True,
+            column_config={
+                "القطعة": st.column_config.TextColumn("القطعة"),
+                "القسم": st.column_config.TextColumn("القسم"),
+                "الرصيد": st.column_config.NumberColumn("الرصيد"),
+                "حد الإنذار": st.column_config.NumberColumn("حد الإنذار"),
+            }
+        )
     else:
         st.success("✅ لا توجد قطع غيار حرجة في الأقسام المسموح بها.")
     
+    # ----------------------------------------------------------------
+    # 3. تنبيهات الصيانة الوقائية (مستحقة وقادمة)
+    # ----------------------------------------------------------------
     st.markdown("---")
     st.subheader("🔧 تنبيهات الصيانة الوقائية")
     
@@ -2786,87 +2886,66 @@ with tabs[idx]:
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
     col1, col2 = st.columns(2)
+    
     with col1:
         st.markdown("#### 🟡 صيانة متأخرة")
         if not overdue.empty:
-            for _, row in overdue.iterrows():
-                eq = row['المعدة']
-                task = row['اسم_البند']
-                due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+            # إضافة عمود القسم
+            overdue_sections = []
+            for eq in overdue["المعدة"]:
                 section = "غير محدد"
                 for sheet_name in allowed_sections:
                     if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
                         section = sheet_name
                         break
-                st.warning(f"⚠️ **{eq}** (قسم: {section}) - {task} (مستحق: {due_date})")
+                overdue_sections.append(section)
+            overdue["القسم"] = overdue_sections
+            
+            # تنسيق التاريخ
+            overdue["تاريخ الاستحقاق"] = overdue["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
+            
+            display_overdue = overdue[["المعدة", "اسم_البند", "القسم", "تاريخ الاستحقاق"]]
+            display_overdue = display_overdue.rename(columns={
+                "المعدة": "المعدة",
+                "اسم_البند": "البند",
+                "القسم": "القسم",
+                "تاريخ الاستحقاق": "تاريخ الاستحقاق"
+            })
+            st.dataframe(display_overdue, use_container_width=True, height=200)
         else:
             st.info("✅ لا توجد صيانات متأخرة في الأقسام المسموح بها.")
+    
     with col2:
         st.markdown("#### 🟢 صيانة قادمة خلال 3 أيام")
         if not upcoming.empty:
-            for _, row in upcoming.iterrows():
-                eq = row['المعدة']
-                task = row['اسم_البند']
-                days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-                due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+            # إضافة عمود القسم
+            upcoming_sections = []
+            for eq in upcoming["المعدة"]:
                 section = "غير محدد"
                 for sheet_name in allowed_sections:
                     if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
                         section = sheet_name
                         break
-                st.info(f"🔹 **{eq}** (قسم: {section}) - {task} (بعد {days} يوم - {due_date})")
+                upcoming_sections.append(section)
+            upcoming["القسم"] = upcoming_sections
+            
+            # حساب عدد الأيام المتبقية
+            today = datetime.now().date()
+            upcoming["الأيام المتبقية"] = (upcoming["التاريخ_التالي"].dt.date - today).dt.days
+            upcoming["تاريخ الاستحقاق"] = upcoming["التاريخ_التالي"].dt.strftime("%Y-%m-%d")
+            
+            display_upcoming = upcoming[["المعدة", "اسم_البند", "القسم", "الأيام المتبقية", "تاريخ الاستحقاق"]]
+            display_upcoming = display_upcoming.rename(columns={
+                "المعدة": "المعدة",
+                "اسم_البند": "البند",
+                "القسم": "القسم",
+                "الأيام المتبقية": "الأيام المتبقية",
+                "تاريخ الاستحقاق": "تاريخ الاستحقاق"
+            })
+            st.dataframe(display_upcoming, use_container_width=True, height=200)
         else:
             st.info("✅ لا توجد صيانات قادمة في الأقسام المسموح بها.")
-idx += 1
-
-# باقي التبويبات (إضافة عطل، إدارة الماكينات، تعديل البيانات، إدارة المستخدمين، الدعم الفني) كما هي
-if can_add_event:
-    with tabs[idx]:
-        if sheets_edit:
-            allowed_for_add = []
-            for sheet_name in sheets_edit.keys():
-                if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
-                    continue
-                if has_section_permission(username, sheet_name, "add_event"):
-                    allowed_for_add.append(sheet_name)
-            if allowed_for_add:
-                sheet_name = st.selectbox("اختر القسم:", allowed_for_add, key="add_event_sheet_main")
-                sheets_edit = add_new_event(sheets_edit, sheet_name)
-            else:
-                st.warning("لا توجد أقسام مسموح لك بإضافة أحداث فيها.")
-        else:
-            st.warning("لا توجد بيانات")
-    idx += 1
-
-if can_manage_machines:
-    with tabs[idx]:
-        if sheets_edit:
-            allowed_for_machines = []
-            for sheet_name in sheets_edit.keys():
-                if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
-                    continue
-                if has_section_permission(username, sheet_name, "manage_machines"):
-                    allowed_for_machines.append(sheet_name)
-            if allowed_for_machines:
-                sheet_name = st.selectbox("اختر القسم:", allowed_for_machines, key="manage_machines_sheet_main")
-                manage_machines(sheets_edit, sheet_name, unique_suffix="main")
-            else:
-                st.warning("لا توجد أقسام مسموح لك بإدارة الماكينات فيها.")
-        else:
-            st.warning("لا توجد بيانات")
-    idx += 1
-
-if can_edit_data:
-    with tabs[idx]:
-        sheets_edit = manage_data_edit(sheets_edit)
-    idx += 1
-
-if username == "admin":
-    with tabs[idx]:
-        admin_users_management_tab()
-    idx += 1
-
-with tabs[idx]:
+idx += 1with tabs[idx]:
     st.header("📞 الدعم الفني")
     st.markdown("### تم تصميم وتنفيذ هذا السيستم بواسطه **م.محمد عبدالله**")
     st.markdown("#### رئيس قسم المحطات والتحضيرات بمصنع بيل يارن1")
