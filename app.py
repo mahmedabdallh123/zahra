@@ -2663,9 +2663,24 @@ with tabs[idx]:
 idx += 1
 
 # ------------------------------- تبويب الإشعارات (بقوائم قابلة للطي) -------------------------------
+# ------------------------------- تبويب الإشعارات (مع تحديث تلقائي وتمرير داخلي) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
+    # ----- خيار التحديث التلقائي -----
+    auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=False, key="auto_refresh_checkbox")
+    if auto_refresh:
+        # كود JavaScript لإعادة تحميل الصفحة كل 30 ثانية
+        st.components.v1.html("""
+        <script>
+        setInterval(function() {
+            location.reload();
+        }, 30000);
+        </script>
+        """, height=0)
+        st.info("✅ التحديث التلقائي مفعّل. سيتم تحديث الصفحة كل 30 ثانية.")
+    
+    # تنظيف السجل القديم
     clean_old_activity_log(days_to_keep=1)
     
     username = st.session_state.get("username")
@@ -2673,78 +2688,28 @@ with tabs[idx]:
     all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
-    # 1. قائمة آخر الأحداث
-    with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
-        activity_log = load_activity_log()
-        filtered_log = []
-        for entry in activity_log:
-            section = entry.get("section", "")
-            if username == "admin" or user_role == "admin":
-                filtered_log.append(entry)
-            else:
-                if not section or section in allowed_sections:
-                    filtered_log.append(entry)
-        recent_log = filtered_log[:10]
-        
-        if recent_log:
-            for entry in recent_log:
-                timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
-                action_type = entry.get("action_type", "حدث")
-                username_act = entry.get("username", "غير معروف")
-                details = entry.get("details", "")
-                section = entry.get("section", "")
-                
-                if action_type == "add_event":
-                    icon = "🆕"
-                elif action_type == "execute_maintenance":
-                    icon = "✅"
-                elif action_type == "add_spare_part":
-                    icon = "🔩"
-                elif action_type == "add_maintenance_task":
-                    icon = "🛠️"
-                elif action_type == "delete_section":
-                    icon = "🗑️"
-                else:
-                    icon = "📌"
-                
-                section_display = f" (قسم: {section})" if section else ""
-                st.info(f"{icon} **{timestamp}** - **{username_act}**{section_display}: {details}")
-        else:
-            st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
+    # ---------- عرض تنبيهات الصيانة بشكل مميز ----------
+    st.subheader("🛠️ تنبيهات الصيانة الوقائية")
     
-    # 2. قائمة قطع الغيار الحرجة
-    with st.expander("⚠️ قطع غيار حرجة", expanded=False):
-        critical = get_critical_spare_parts()
-        if username != "admin" and user_role != "admin":
-            critical = [part for part in critical if part.get("القسم", "") in allowed_sections]
-        
-        if critical:
-            for part in critical:
-                threshold = part.get('حد_الإنذار', 1)
-                section_name = part.get('القسم', 'غير محدد')
-                st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {section_name}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
-        else:
-            st.success("✅ لا توجد قطع غيار حرجة في الأقسام المسموح بها.")
+    # جلب المهام المتأخرة والقادمة
+    allowed_equipment = []
+    for sheet_name in allowed_sections:
+        if sheet_name in all_sheets:
+            df = all_sheets[sheet_name]
+            if "المعدة" in df.columns:
+                allowed_equipment.extend(df["المعدة"].dropna().unique())
+    allowed_equipment = [str(eq).strip() for eq in allowed_equipment if str(eq).strip() != ""]
     
-    # 3. قائمة تنبيهات الصيانة الوقائية
-    with st.expander("🛠️ تنبيهات الصيانة الوقائية", expanded=False):
-        allowed_equipment = []
-        for sheet_name in allowed_sections:
-            if sheet_name in all_sheets:
-                df = all_sheets[sheet_name]
-                if "المعدة" in df.columns:
-                    allowed_equipment.extend(df["المعدة"].dropna().unique())
-        allowed_equipment = [str(eq).strip() for eq in allowed_equipment if str(eq).strip() != ""]
-        
-        overdue, upcoming = get_upcoming_maintenance(3)
-        
-        if username != "admin" and user_role != "admin":
-            overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
-            upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
-        
-        # قسم الصيانة المتأخرة
-        with st.expander("🟡 صيانة متأخرة", expanded=False):
-            if not overdue.empty:
+    overdue, upcoming = get_upcoming_maintenance(3)
+    
+    if username != "admin" and user_role != "admin":
+        overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
+        upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
+    
+    # 1. الصيانة المتأخرة (الأولوية القصوى)
+    with st.expander("🔴 صيانة متأخرة", expanded=True):  # مفتوح افتراضياً
+        if not overdue.empty:
+            with st.container(height=250):
                 for _, row in overdue.iterrows():
                     eq = row['المعدة']
                     task = row['اسم_البند']
@@ -2754,13 +2719,14 @@ with tabs[idx]:
                         if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
                             section = sheet_name
                             break
-                    st.warning(f"⚠️ **{eq}** (قسم: {section}) - {task} (مستحق: {due_date})")
-            else:
-                st.info("✅ لا توجد صيانات متأخرة في الأقسام المسموح بها.")
-        
-        # قسم الصيانة القادمة
-        with st.expander("🟢 صيانة قادمة خلال 3 أيام", expanded=False):
-            if not upcoming.empty:
+                    st.error(f"⚠️ **{eq}** (قسم: {section}) - {task} (مستحق: {due_date})")
+        else:
+            st.success("✅ لا توجد صيانات متأخرة.")
+    
+    # 2. الصيانة القادمة خلال 3 أيام
+    with st.expander("🟡 صيانة قادمة خلال 3 أيام", expanded=True):
+        if not upcoming.empty:
+            with st.container(height=250):
                 for _, row in upcoming.iterrows():
                     eq = row['المعدة']
                     task = row['اسم_البند']
@@ -2771,16 +2737,68 @@ with tabs[idx]:
                         if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
                             section = sheet_name
                             break
-                    st.info(f"🔹 **{eq}** (قسم: {section}) - {task} (بعد {days} يوم - {due_date})")
-            else:
-                st.info("✅ لا توجد صيانات قادمة في الأقسام المسموح بها.")
+                    st.warning(f"🔹 **{eq}** (قسم: {section}) - {task} (بعد {days} يوم - {due_date})")
+        else:
+            st.info("✅ لا توجد صيانات قادمة خلال الأيام الثلاثة القادمة.")
     
-    # زر تحديث الإشعارات
-    if st.button("🔄 تحديث الإشعارات", key="refresh_notifications"):
+    # ---------- عرض باقي الإشعارات (الأحداث، قطع الغيار) ----------
+    st.markdown("---")
+    with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
+        activity_log = load_activity_log()
+        filtered_log = []
+        for entry in activity_log:
+            section = entry.get("section", "")
+            if username == "admin" or user_role == "admin":
+                filtered_log.append(entry)
+            else:
+                if not section or section in allowed_sections:
+                    filtered_log.append(entry)
+        recent_log = filtered_log[:20]
+        
+        if recent_log:
+            with st.container(height=200):
+                for entry in recent_log:
+                    timestamp = datetime.fromisoformat(entry["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+                    action_type = entry.get("action_type", "حدث")
+                    username_act = entry.get("username", "غير معروف")
+                    details = entry.get("details", "")
+                    section = entry.get("section", "")
+                    
+                    if action_type == "add_event":
+                        icon = "🆕"
+                    elif action_type == "execute_maintenance":
+                        icon = "✅"
+                    elif action_type == "add_spare_part":
+                        icon = "🔩"
+                    elif action_type == "add_maintenance_task":
+                        icon = "🛠️"
+                    elif action_type == "delete_section":
+                        icon = "🗑️"
+                    else:
+                        icon = "📌"
+                    
+                    section_display = f" (قسم: {section})" if section else ""
+                    st.info(f"{icon} **{timestamp}** - **{username_act}**{section_display}: {details}")
+        else:
+            st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
+    
+    with st.expander("⚠️ قطع غيار حرجة", expanded=False):
+        critical = get_critical_spare_parts()
+        if username != "admin" and user_role != "admin":
+            critical = [part for part in critical if part.get("القسم", "") in allowed_sections]
+        
+        if critical:
+            with st.container(height=150):
+                for part in critical:
+                    threshold = part.get('حد_الإنذار', 1)
+                    section_name = part.get('القسم', 'غير محدد')
+                    st.error(f"🔴 **{part['اسم القطعة']}** (قسم: {section_name}) - الرصيد: {part['الرصيد الموجود']} < حد الإنذار: {threshold}")
+        else:
+            st.success("✅ لا توجد قطع غيار حرجة.")
+    
+    # زر تحديث يدوي
+    if st.button("🔄 تحديث الآن", key="manual_refresh"):
         st.rerun()
-
-idx += 1
-
 # ------------------------------- تبويب الدعم الفني -------------------------------
 with tabs[idx]:
     st.header("📞 الدعم الفني")
