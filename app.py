@@ -2739,8 +2739,8 @@ with tabs[idx]:
         st.markdown(f"""
         <style>
         @keyframes scroll-text {{
-            0% {{ transform: translateX(100%); }}
-            100% {{ transform: translateX(-100%); }}
+            0% {{ transform: translateX(-100%); }}
+            100% {{ transform: translateX(100%); }}
         }}
         .scrolling-wrapper {{
             overflow: hidden;
@@ -2755,7 +2755,7 @@ with tabs[idx]:
         }}
         .scrolling-content {{
             display: inline-block;
-            animation: scroll-text 1080s linear infinite;  /* زيادة المدة من 20s إلى 45s (أبطأ) */
+            animation: scroll-text 1155s linear infinite;  /* زيادة المدة من 20s إلى 45s (أبطأ) */
             font-size: 40px;  /* زيادة حجم الخط من 18px إلى 26px */
             font-weight: bold;
             color: #1a1a2e;
