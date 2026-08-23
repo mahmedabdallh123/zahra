@@ -2670,9 +2670,75 @@ idx += 1
 
 # ------------------------------- تبويب الإشعارات (مع تحديث تلقائي وتمرير تلقائي) -------------------------------
 # ------------------------------- تبويب الإشعارات (مع تمرير مستمر تلقائي) -------------------------------
+# ------------------------------- تبويب الإشعارات (مع تمرير مستمر مثل شريط إعلانات) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
-
+    
+    # ----- تأثير التمرير المستمر (ساقية دوارة) -----
+    st.components.v1.html("""
+    <script>
+    (function() {
+        // سرعة التمرير (بكسل لكل خطوة)
+        var scrollSpeed = 1.0;   // قم بتعديل القيمة للتحكم في السرعة (أقل = أبطأ)
+        var intervalTime = 50;   // مللي ثانية بين كل تحديث
+        
+        var containers = [];
+        
+        // البحث عن الحاويات التي تحتوي على تنبيهات الصيانة
+        function findContainers() {
+            var allDivs = document.querySelectorAll('div[style*="height: 250px"][style*="overflow-y: auto"]');
+            allDivs.forEach(function(div) {
+                // تأكد من أن الحاوية ليست مضافة مسبقاً
+                if (!containers.includes(div)) {
+                    containers.push(div);
+                }
+            });
+        }
+        
+        // بدء التمرير لكل حاوية
+        function startScrolling() {
+            containers.forEach(function(container) {
+                var maxScroll = container.scrollHeight - container.clientHeight;
+                if (maxScroll <= 0) return;
+                
+                // إذا كانت الحاوية في الأعلى، ابدأ التمرير للأسفل
+                // نتحقق كل مرة من موضع التمرير ونقرر الاتجاه
+                // نستخدم متغير لتخزين اتجاه التمرير لكل حاوية
+                if (!container.dataset.direction) {
+                    container.dataset.direction = 'down';
+                }
+                
+                // إذا وصلنا للأسفل، نغير الاتجاه للأعلى
+                if (container.scrollTop >= maxScroll - 5) {
+                    container.dataset.direction = 'up';
+                }
+                // إذا وصلنا للأعلى، نغير الاتجاه للأسفل
+                else if (container.scrollTop <= 5) {
+                    container.dataset.direction = 'down';
+                }
+                
+                // تحريك التمرير وفقاً للاتجاه
+                if (container.dataset.direction === 'down') {
+                    container.scrollTop += scrollSpeed;
+                } else {
+                    container.scrollTop -= scrollSpeed;
+                }
+            });
+        }
+        
+        // البحث عن الحاويات بعد تحميل الصفحة
+        setTimeout(function() {
+            findContainers();
+            // بدء التمرير المستمر
+            setInterval(startScrolling, intervalTime);
+        }, 1000);
+        
+        // إعادة البحث عن الحاويات بعد التحديث التلقائي
+        // (عند إعادة تحميل الصفحة، سيعمل السكريبت من جديد)
+    })();
+    </script>
+    """, height=0)
+    
     # ----- خيار التحديث التلقائي -----
     auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")
     if auto_refresh:
@@ -2684,7 +2750,7 @@ with tabs[idx]:
         </script>
         """, height=0)
         st.info("✅ التحديث التلقائي مفعّل. سيتم تحديث الصفحة كل 30 ثانية.")
-
+    
     clean_old_activity_log(days_to_keep=1)
     
     username = st.session_state.get("username")
@@ -2692,7 +2758,7 @@ with tabs[idx]:
     all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
-    # ---------- عرض تنبيهات الصيانة بشكل مميز مع تمرير مستمر ----------
+    # ---------- عرض تنبيهات الصيانة بشكل مميز ----------
     st.subheader("🛠️ تنبيهات الصيانة الوقائية")
     
     allowed_equipment = []
@@ -2709,77 +2775,47 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # دمج الصيانة المتأخرة والقادمة في قائمة واحدة للتمرير
-    maintenance_items = []
-    for _, row in overdue.iterrows():
-        eq = row['المعدة']
-        task = row['اسم_البند']
-        due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
-        section = "غير محدد"
-        for sheet_name in allowed_sections:
-            if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                section = sheet_name
-                break
-        maintenance_items.append(f"🔴 متأخرة: {eq} ({section}) - {task} (مستحق: {due_date})")
+    # 1. الصيانة المتأخرة (مع تمرير مستمر)
+    with st.container(border=True):
+        st.markdown("#### 🔴 صيانة متأخرة")
+        if not overdue.empty:
+            with st.container(height=250):
+                for _, row in overdue.iterrows():
+                    eq = row['المعدة']
+                    task = row['اسم_البند']
+                    due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+                    section = "غير محدد"
+                    for sheet_name in allowed_sections:
+                        if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                            section = sheet_name
+                            break
+                    st.error(f"⚠️ **{eq}** (قسم: {section}) - {task} (مستحق: {due_date})")
+        else:
+            st.success("✅ لا توجد صيانات متأخرة.")
     
-    for _, row in upcoming.iterrows():
-        eq = row['المعدة']
-        task = row['اسم_البند']
-        days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-        due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
-        section = "غير محدد"
-        for sheet_name in allowed_sections:
-            if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                section = sheet_name
-                break
-        maintenance_items.append(f"🟡 قادمة: {eq} ({section}) - {task} (بعد {days} يوم - {due_date})")
-    
-    if maintenance_items:
-        # إنشاء نص طويل يحتوي على جميع التنبيهات مع فواصل
-        text_to_scroll = " | ".join(maintenance_items)
-        
-        # تطبيق CSS للتمرير المستمر (الماركيز)
-        st.markdown(f"""
-        <style>
-        @keyframes scroll-text {{
-            0% {{ transform: translateX(100%); }}
-            100% {{ transform: translateX(-100%); }}
-        }}
-        .scrolling-wrapper {{
-            overflow: hidden;
-            white-space: nowrap;
-            background-color: #f8f9fa;
-            border: 2px solid #ffc107;
-            border-radius: 8px;
-            padding: 12px 0;
-            width: 100%;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        .scrolling-content {{
-            display: inline-block;
-            animation: scroll-text 20s linear infinite;
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-            padding-left: 100%;
-        }}
-        .scrolling-content:hover {{
-            animation-play-state: paused;
-        }}
-        </style>
-        <div class="scrolling-wrapper">
-            <div class="scrolling-content">
-                {text_to_scroll}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.success("✅ لا توجد صيانات متأخرة أو قادمة.")
+    # 2. الصيانة القادمة خلال 3 أيام (مع تمرير مستمر)
+    with st.container(border=True):
+        st.markdown("#### 🟡 صيانة قادمة خلال 3 أيام")
+        if not upcoming.empty:
+            with st.container(height=250):
+                for _, row in upcoming.iterrows():
+                    eq = row['المعدة']
+                    task = row['اسم_البند']
+                    days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+                    due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+                    section = "غير محدد"
+                    for sheet_name in allowed_sections:
+                        if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                            section = sheet_name
+                            break
+                    st.warning(f"🔹 **{eq}** (قسم: {section}) - {task} (بعد {days} يوم - {due_date})")
+        else:
+            st.info("✅ لا توجد صيانات قادمة خلال الأيام الثلاثة القادمة.")
     
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار")
     
-    # 1. آخر الأحداث (مطوية)
+    # 3. آخر الأحداث (بدون تمرير تلقائي - يمكن تركه ثابتاً)
     with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
         activity_log = load_activity_log()
         filtered_log = []
@@ -2819,7 +2855,7 @@ with tabs[idx]:
         else:
             st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
     
-    # 2. قطع الغيار الحرجة (مطوية)
+    # 4. قطع الغيار الحرجة (بدون تمرير تلقائي)
     with st.expander("⚠️ قطع غيار حرجة", expanded=False):
         critical = get_critical_spare_parts()
         if username != "admin" and user_role != "admin":
