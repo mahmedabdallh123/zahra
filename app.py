@@ -2643,15 +2643,14 @@ with st.sidebar:
             mins, secs = divmod(int(rem.total_seconds()), 60)
             st.success(f"👋 {username} | ⏳ {mins:02d}:{secs:02d}")
         st.markdown("---")
-        if st.button("🔄 تحديث"):
+        if st.button("🔄 تحديث", key="sidebar_refresh"):
             if fetch_from_github_requests():
                 st.rerun()
-        if st.button("مسح مهملات"):
+        if st.button("مسح مهملات", key="clear_cache"):
             st.cache_data.clear()
             st.rerun()
         if st.button("🚪 تسجيل الخروج"):
             logout_action()
-
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
 st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
