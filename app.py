@@ -2667,73 +2667,79 @@ with tabs[idx]:
     failures_analysis_tab(all_sheets)
 idx += 1
 
-# ------------------------------- تبويب الإشعارات (مع تحديث تلقائي وتمرير تلقائي) -------------------------------
-# ------------------------------- تبويب الإشعارات (مع تمرير مستمر تلقائي) -------------------------------
 # ------------------------------- تبويب الإشعارات (مع تمرير مستمر مثل شريط إعلانات) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
-    # ----- تأثير التمرير المستمر (ساقية دوارة) -----
+    # ----- سكريبت التمرير المستمر (يعمل تلقائياً على أي حاوية ارتفاع 250 بكسل) -----
     st.components.v1.html("""
     <script>
     (function() {
-        // سرعة التمرير (بكسل لكل خطوة)
-        var scrollSpeed = 1.0;   // قم بتعديل القيمة للتحكم في السرعة (أقل = أبطأ)
-        var intervalTime = 50;   // مللي ثانية بين كل تحديث
-        
+        var scrollSpeed = 0.8;      // سرعة التمرير (أقل = أبطأ)
+        var intervalTime = 50;      // مللي ثانية بين كل حركة
         var containers = [];
-        
+        var isScrolling = false;
+        var scrollInterval = null;
+
         // البحث عن الحاويات التي تحتوي على تنبيهات الصيانة
         function findContainers() {
             var allDivs = document.querySelectorAll('div[style*="height: 250px"][style*="overflow-y: auto"]');
             allDivs.forEach(function(div) {
-                // تأكد من أن الحاوية ليست مضافة مسبقاً
                 if (!containers.includes(div)) {
                     containers.push(div);
+                    console.log('تم العثور على حاوية جديدة');
                 }
             });
+            // إذا وجدنا حاويات ولم نبدأ التمرير بعد، نبدأ
+            if (containers.length > 0 && !isScrolling) {
+                isScrolling = true;
+                startScrolling();
+            }
         }
-        
-        // بدء التمرير لكل حاوية
+
+        // بدء التمرير المستمر
         function startScrolling() {
-            containers.forEach(function(container) {
-                var maxScroll = container.scrollHeight - container.clientHeight;
-                if (maxScroll <= 0) return;
-                
-                // إذا كانت الحاوية في الأعلى، ابدأ التمرير للأسفل
-                // نتحقق كل مرة من موضع التمرير ونقرر الاتجاه
-                // نستخدم متغير لتخزين اتجاه التمرير لكل حاوية
-                if (!container.dataset.direction) {
-                    container.dataset.direction = 'down';
-                }
-                
-                // إذا وصلنا للأسفل، نغير الاتجاه للأعلى
-                if (container.scrollTop >= maxScroll - 5) {
-                    container.dataset.direction = 'up';
-                }
-                // إذا وصلنا للأعلى، نغير الاتجاه للأسفل
-                else if (container.scrollTop <= 5) {
-                    container.dataset.direction = 'down';
-                }
-                
-                // تحريك التمرير وفقاً للاتجاه
-                if (container.dataset.direction === 'down') {
-                    container.scrollTop += scrollSpeed;
-                } else {
-                    container.scrollTop -= scrollSpeed;
-                }
-            });
+            if (scrollInterval) clearInterval(scrollInterval);
+            scrollInterval = setInterval(function() {
+                containers.forEach(function(container) {
+                    var maxScroll = container.scrollHeight - container.clientHeight;
+                    if (maxScroll <= 0) return;
+                    
+                    // تحديد الاتجاه
+                    if (!container.dataset.direction) {
+                        container.dataset.direction = 'down';
+                    }
+                    if (container.scrollTop >= maxScroll - 5) {
+                        container.dataset.direction = 'up';
+                    } else if (container.scrollTop <= 5) {
+                        container.dataset.direction = 'down';
+                    }
+                    
+                    // التمرير
+                    if (container.dataset.direction === 'down') {
+                        container.scrollTop += scrollSpeed;
+                    } else {
+                        container.scrollTop -= scrollSpeed;
+                    }
+                });
+            }, intervalTime);
         }
-        
-        // البحث عن الحاويات بعد تحميل الصفحة
+
+        // البحث الأولي بعد تحميل الصفحة
         setTimeout(function() {
             findContainers();
-            // بدء التمرير المستمر
-            setInterval(startScrolling, intervalTime);
-        }, 1000);
-        
-        // إعادة البحث عن الحاويات بعد التحديث التلقائي
-        // (عند إعادة تحميل الصفحة، سيعمل السكريبت من جديد)
+        }, 1500);
+
+        // مراقبة التغييرات في DOM (للبحث عن حاويات جديدة بعد إعادة التحميل الجزئي)
+        var observer = new MutationObserver(function(mutations) {
+            findContainers();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // عند إعادة تحميل الصفحة (بعد التحديث التلقائي)
+        window.addEventListener('load', function() {
+            setTimeout(findContainers, 2000);
+        });
     })();
     </script>
     """, height=0)
@@ -2814,7 +2820,7 @@ with tabs[idx]:
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار")
     
-    # 3. آخر الأحداث (بدون تمرير تلقائي - يمكن تركه ثابتاً)
+    # 3. آخر الأحداث (بدون تمرير تلقائي)
     with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
         activity_log = load_activity_log()
         filtered_log = []
