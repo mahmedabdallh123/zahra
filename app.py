@@ -2649,7 +2649,7 @@ with st.sidebar:
         if st.button("مسح مهملات", key="clear_cache"):
             st.cache_data.clear()
             st.rerun()
-        if st.button("🚪 تسجيل الخروج"):
+        if st.button("🚪 تسجيل الخروج", key="logout_button"):
             logout_action()
 all_sheets = load_all_sheets()
 sheets_edit = load_sheets_for_edit()
