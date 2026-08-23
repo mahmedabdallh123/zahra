@@ -2666,75 +2666,71 @@ with tabs[idx]:
     failures_analysis_tab(all_sheets)
 idx += 1
 
-# ------------------------------- تبويب الإشعارات (مع تمرير مستمر يعمل 100%) -------------------------------
-# ------------------------------- تبويب الإشعارات (تمرير رأسي تلقائي) -------------------------------
+# ------------------------------- تبويب الإشعارات (تمرير أفقي تلقائي - أبطأ) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
-    # ----- سكريبت التمرير الرأسي المستمر -----
+    # ----- سكريبت التمرير الأفقي المستمر (أبطأ) -----
     st.components.v1.html("""
     <script>
     (function() {
-        var speed = 0.8;          // سرعة التمرير (بكسل لكل خطوة)
-        var interval = 50;        // مللي ثانية بين كل حركة
+        var scrollSpeed = 0.2;      // أبطأ بكثير (كان 0.8)
+        var intervalTime = 50;      // مللي ثانية بين كل حركة
         var containers = [];
 
-        function findAndSetupContainer(id) {
-            var element = document.getElementById(id);
-            if (!element) return null;
-            // ابحث عن أقرب أب قابل للتمرير (overflow-y: auto أو overflow: auto)
-            var parent = element.parentElement;
-            while (parent && parent !== document.body) {
-                var style = window.getComputedStyle(parent);
-                if (style.overflowY === 'auto' || style.overflow === 'auto') {
-                    // تأكد من أن الارتفاع محدد
-                    if (parent.clientHeight < 50) {
-                        parent.style.height = '250px';
-                    }
-                    return parent;
+        function findHorizontalContainers() {
+            // البحث عن أي عنصر له تمرير أفقي (overflow-x: auto أو scroll)
+            var allElements = document.querySelectorAll('div[style*="overflow-x: auto"], div[style*="overflow-x:scroll"], div[style*="overflow: auto"], div[style*="overflow:scroll"]');
+            allElements.forEach(function(el) {
+                // تأكد أن المحتوى أوسع من العرض (يحتاج تمرير)
+                if (el.scrollWidth > el.clientWidth && !containers.includes(el)) {
+                    containers.push(el);
                 }
-                parent = parent.parentElement;
-            }
-            // إذا لم نجد، نضبط العنصر نفسه
-            element.style.display = 'block';
-            element.style.height = '250px';
-            element.style.overflowY = 'auto';
-            return element;
+            });
+            // أيضاً ابحث عن st.dataframe (التي قد يكون لها class خاص)
+            var dataframes = document.querySelectorAll('[data-testid="stDataFrame"]');
+            dataframes.forEach(function(el) {
+                // قد يكون التمرير في عنصر داخلي
+                var inner = el.querySelector('div[style*="overflow"]');
+                if (inner && inner.scrollWidth > inner.clientWidth && !containers.includes(inner)) {
+                    containers.push(inner);
+                }
+            });
         }
 
         function startScrolling() {
-            var overdueContainer = findAndSetupContainer('scroll-overdue');
-            var upcomingContainer = findAndSetupContainer('scroll-upcoming');
-            if (overdueContainer) containers.push(overdueContainer);
-            if (upcomingContainer) containers.push(upcomingContainer);
-
-            if (containers.length === 0) {
-                console.log('لم يتم العثور على حاويات للتمرير');
-                return;
-            }
-
-            setInterval(function() {
-                containers.forEach(function(container) {
-                    var maxScroll = container.scrollHeight - container.clientHeight;
-                    if (maxScroll <= 0) return;
-
-                    if (!container.dataset.direction) container.dataset.direction = 'down';
-                    if (container.scrollTop >= maxScroll - 5) container.dataset.direction = 'up';
-                    else if (container.scrollTop <= 5) container.dataset.direction = 'down';
-
-                    if (container.dataset.direction === 'down') {
-                        container.scrollTop += speed;
-                    } else {
-                        container.scrollTop -= speed;
-                    }
-                });
-            }, interval);
+            containers.forEach(function(container) {
+                var maxScroll = container.scrollWidth - container.clientWidth;
+                if (maxScroll <= 0) return;
+                
+                if (!container.dataset.direction) container.dataset.direction = 'right';
+                if (container.scrollLeft >= maxScroll - 5) container.dataset.direction = 'left';
+                else if (container.scrollLeft <= 5) container.dataset.direction = 'right';
+                
+                if (container.dataset.direction === 'right') {
+                    container.scrollLeft += scrollSpeed;
+                } else {
+                    container.scrollLeft -= scrollSpeed;
+                }
+            });
         }
 
-        // تشغيل بعد تحميل الصفحة
-        setTimeout(startScrolling, 2000);
+        // تشغيل البحث والتمرير بعد تحميل الصفحة
+        setTimeout(function() {
+            findHorizontalContainers();
+            if (containers.length > 0) {
+                setInterval(startScrolling, intervalTime);
+            }
+        }, 2000);
+
+        // إعادة البحث بعد التحديث التلقائي
         window.addEventListener('load', function() {
-            setTimeout(startScrolling, 2500);
+            setTimeout(function() {
+                findHorizontalContainers();
+                if (containers.length > 0) {
+                    setInterval(startScrolling, intervalTime);
+                }
+            }, 2500);
         });
     })();
     </script>
@@ -2776,44 +2772,28 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # 1. الصيانة المتأخرة (مع تمرير رأسي)
-    with st.container(border=True):
-        st.markdown("#### 🔴 صيانة متأخرة")
-        if not overdue.empty:
-            st.markdown('<div id="scroll-overdue"></div>', unsafe_allow_html=True)
-            with st.container(height=250):
-                for _, row in overdue.iterrows():
+    # عرض الصيانة في أعمدة أفقية (لتفعيل التمرير الأفقي)
+    if not overdue.empty or not upcoming.empty:
+        # نستخدم columns لعرض التنبيهات أفقياً
+        cols = st.columns(min(3, max(1, len(overdue) + len(upcoming))))
+        all_tasks = list(overdue.iterrows()) + list(upcoming.iterrows())
+        for i, (_, row) in enumerate(all_tasks):
+            with cols[i % len(cols)]:
+                with st.container(border=True):
                     eq = row['المعدة']
                     task = row['اسم_البند']
-                    due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
-                    section = "غير محدد"
-                    for sheet_name in allowed_sections:
-                        if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                            section = sheet_name
-                            break
-                    st.error(f"⚠️ **{eq}** (قسم: {section}) - {task} (مستحق: {due_date})")
-        else:
-            st.success("✅ لا توجد صيانات متأخرة.")
-    
-    # 2. الصيانة القادمة خلال 3 أيام (مع تمرير رأسي)
-    with st.container(border=True):
-        st.markdown("#### 🟡 صيانة قادمة خلال 3 أيام")
-        if not upcoming.empty:
-            st.markdown('<div id="scroll-upcoming"></div>', unsafe_allow_html=True)
-            with st.container(height=250):
-                for _, row in upcoming.iterrows():
-                    eq = row['المعدة']
-                    task = row['اسم_البند']
-                    days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-                    due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
-                    section = "غير محدد"
-                    for sheet_name in allowed_sections:
-                        if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
-                            section = sheet_name
-                            break
-                    st.warning(f"🔹 **{eq}** (قسم: {section}) - {task} (بعد {days} يوم - {due_date})")
-        else:
-            st.info("✅ لا توجد صيانات قادمة خلال الأيام الثلاثة القادمة.")
+                    if i < len(overdue):
+                        status = "🔴 متأخرة"
+                        due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+                    else:
+                        status = "🟡 قادمة"
+                        days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+                        due_date = f"بعد {days} يوم"
+                    st.markdown(f"**{eq}**")
+                    st.caption(f"{task}")
+                    st.write(f"{status} - {due_date}")
+    else:
+        st.info("✅ لا توجد تنبيهات صيانة حالياً.")
     
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار")
