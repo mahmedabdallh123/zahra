@@ -2705,19 +2705,22 @@ idx += 1
 
 # ------------------------------- تبويب الإشعارات (معدل مع تحديث تلقائي وتمرير داخلي) -------------------------------
 # ------------------------------- تبويب الإشعارات (مع تحديث تلقائي وتمرير تلقائي للأسفل) -------------------------------
+# ------------------------------- تبويب الإشعارات (مع تحديث تلقائي وتمرير تلقائي) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
-    # ----- سكريبت التمرير التلقائي للأسفل -----
+    # ----- عنصر وهمي للتمرير إليه -----
+    st.markdown('<div id="maintenance-scroll-target"></div>', unsafe_allow_html=True)
+    
+    # ----- سكريبت التمرير التلقائي -----
     st.components.v1.html("""
     <script>
     setTimeout(function() {
-        // البحث عن كل الحاويات التي ارتفاعها 250 بكسل وفيها تمرير
-        var containers = document.querySelectorAll('div[style*="height: 250px"][style*="overflow-y: auto"]');
-        containers.forEach(function(container) {
-            container.scrollTop = container.scrollHeight;
-        });
-    }, 600);
+        var target = document.getElementById('maintenance-scroll-target');
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }, 800);
     </script>
     """, height=0)
     
@@ -2757,7 +2760,7 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # 1. الصيانة المتأخرة (مع تمرير داخلي)
+    # 1. الصيانة المتأخرة
     with st.container(border=True):
         st.markdown("#### 🔴 صيانة متأخرة")
         if not overdue.empty:
@@ -2775,7 +2778,7 @@ with tabs[idx]:
         else:
             st.success("✅ لا توجد صيانات متأخرة.")
     
-    # 2. الصيانة القادمة خلال 3 أيام (مع تمرير داخلي)
+    # 2. الصيانة القادمة خلال 3 أيام
     with st.container(border=True):
         st.markdown("#### 🟡 صيانة قادمة خلال 3 أيام")
         if not upcoming.empty:
@@ -2797,7 +2800,7 @@ with tabs[idx]:
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار")
     
-    # 3. آخر الأحداث (مطوية)
+    # 3. آخر الأحداث
     with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
         activity_log = load_activity_log()
         filtered_log = []
@@ -2837,7 +2840,7 @@ with tabs[idx]:
         else:
             st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
     
-    # 4. قطع الغيار الحرجة (مطوية)
+    # 4. قطع الغيار الحرجة
     with st.expander("⚠️ قطع غيار حرجة", expanded=False):
         critical = get_critical_spare_parts()
         if username != "admin" and user_role != "admin":
