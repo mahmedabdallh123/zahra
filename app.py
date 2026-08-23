@@ -2666,76 +2666,10 @@ with tabs[idx]:
     failures_analysis_tab(all_sheets)
 idx += 1
 
-# ------------------------------- تبويب الإشعارات (تمرير أفقي تلقائي - أبطأ) -------------------------------
+# ------------------------------- تبويب الإشعارات (مع تمرير مستمر تلقائي - أبطأ وأكبر) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
-    
-    # ----- سكريبت التمرير الأفقي المستمر (أبطأ) -----
-    st.components.v1.html("""
-    <script>
-    (function() {
-        var scrollSpeed = 0.2;      // أبطأ بكثير (كان 0.8)
-        var intervalTime = 50;      // مللي ثانية بين كل حركة
-        var containers = [];
 
-        function findHorizontalContainers() {
-            // البحث عن أي عنصر له تمرير أفقي (overflow-x: auto أو scroll)
-            var allElements = document.querySelectorAll('div[style*="overflow-x: auto"], div[style*="overflow-x:scroll"], div[style*="overflow: auto"], div[style*="overflow:scroll"]');
-            allElements.forEach(function(el) {
-                // تأكد أن المحتوى أوسع من العرض (يحتاج تمرير)
-                if (el.scrollWidth > el.clientWidth && !containers.includes(el)) {
-                    containers.push(el);
-                }
-            });
-            // أيضاً ابحث عن st.dataframe (التي قد يكون لها class خاص)
-            var dataframes = document.querySelectorAll('[data-testid="stDataFrame"]');
-            dataframes.forEach(function(el) {
-                // قد يكون التمرير في عنصر داخلي
-                var inner = el.querySelector('div[style*="overflow"]');
-                if (inner && inner.scrollWidth > inner.clientWidth && !containers.includes(inner)) {
-                    containers.push(inner);
-                }
-            });
-        }
-
-        function startScrolling() {
-            containers.forEach(function(container) {
-                var maxScroll = container.scrollWidth - container.clientWidth;
-                if (maxScroll <= 0) return;
-                
-                if (!container.dataset.direction) container.dataset.direction = 'right';
-                if (container.scrollLeft >= maxScroll - 5) container.dataset.direction = 'left';
-                else if (container.scrollLeft <= 5) container.dataset.direction = 'right';
-                
-                if (container.dataset.direction === 'right') {
-                    container.scrollLeft += scrollSpeed;
-                } else {
-                    container.scrollLeft -= scrollSpeed;
-                }
-            });
-        }
-
-        // تشغيل البحث والتمرير بعد تحميل الصفحة
-        setTimeout(function() {
-            findHorizontalContainers();
-            if (containers.length > 0) {
-                setInterval(startScrolling, intervalTime);
-            }
-        }, 2000);
-
-        // إعادة البحث بعد التحديث التلقائي
-        window.addEventListener('load', function() {
-            setTimeout(function() {
-                findHorizontalContainers();
-                if (containers.length > 0) {
-                    setInterval(startScrolling, intervalTime);
-                }
-            }, 2500);
-        });
-    })();
-    </script>
-    """, height=0)
-    
     # ----- خيار التحديث التلقائي -----
     auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")
     if auto_refresh:
@@ -2747,7 +2681,7 @@ with tabs[idx]:
         </script>
         """, height=0)
         st.info("✅ التحديث التلقائي مفعّل. سيتم تحديث الصفحة كل 30 ثانية.")
-    
+
     clean_old_activity_log(days_to_keep=1)
     
     username = st.session_state.get("username")
@@ -2755,7 +2689,7 @@ with tabs[idx]:
     all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
-    # ---------- عرض تنبيهات الصيانة بشكل مميز ----------
+    # ---------- عرض تنبيهات الصيانة بشكل مميز مع تمرير مستمر ----------
     st.subheader("🛠️ تنبيهات الصيانة الوقائية")
     
     allowed_equipment = []
@@ -2772,33 +2706,85 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # عرض الصيانة في أعمدة أفقية (لتفعيل التمرير الأفقي)
-    if not overdue.empty or not upcoming.empty:
-        # نستخدم columns لعرض التنبيهات أفقياً
-        cols = st.columns(min(3, max(1, len(overdue) + len(upcoming))))
-        all_tasks = list(overdue.iterrows()) + list(upcoming.iterrows())
-        for i, (_, row) in enumerate(all_tasks):
-            with cols[i % len(cols)]:
-                with st.container(border=True):
-                    eq = row['المعدة']
-                    task = row['اسم_البند']
-                    if i < len(overdue):
-                        status = "🔴 متأخرة"
-                        due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
-                    else:
-                        status = "🟡 قادمة"
-                        days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-                        due_date = f"بعد {days} يوم"
-                    st.markdown(f"**{eq}**")
-                    st.caption(f"{task}")
-                    st.write(f"{status} - {due_date}")
+    # دمج الصيانة المتأخرة والقادمة في قائمة واحدة للتمرير
+    maintenance_items = []
+    for _, row in overdue.iterrows():
+        eq = row['المعدة']
+        task = row['اسم_البند']
+        due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+        section = "غير محدد"
+        for sheet_name in allowed_sections:
+            if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                section = sheet_name
+                break
+        maintenance_items.append(f"🔴 متأخرة: {eq} ({section}) - {task} (مستحق: {due_date})")
+    
+    for _, row in upcoming.iterrows():
+        eq = row['المعدة']
+        task = row['اسم_البند']
+        days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+        due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+        section = "غير محدد"
+        for sheet_name in allowed_sections:
+            if sheet_name in all_sheets and eq in all_sheets[sheet_name]["المعدة"].values:
+                section = sheet_name
+                break
+        maintenance_items.append(f"🟡 قادمة: {eq} ({section}) - {task} (بعد {days} يوم - {due_date})")
+    
+    if maintenance_items:
+        # إنشاء نص طويل يحتوي على جميع التنبيهات مع فواصل
+        text_to_scroll = " | ".join(maintenance_items)
+        
+        # تطبيق CSS للتمرير المستمر (الماركيز) مع جعله أبطأ وأكبر
+        st.markdown(f"""
+        <style>
+        @keyframes scroll-text {{
+            0% {{ transform: translateX(100%); }}
+            100% {{ transform: translateX(-100%); }}
+        }}
+        .scrolling-wrapper {{
+            overflow: hidden;
+            white-space: nowrap;
+            background-color: #f8f9fa;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px 0;
+            width: 100%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            margin: 10px 0;
+        }}
+        .scrolling-content {{
+            display: inline-block;
+            animation: scroll-text 45s linear infinite;  /* زيادة المدة من 20s إلى 45s (أبطأ) */
+            font-size: 26px;  /* زيادة حجم الخط من 18px إلى 26px */
+            font-weight: bold;
+            color: #1a1a2e;
+            padding-left: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
+        }}
+        .scrolling-content:hover {{
+            animation-play-state: paused;
+        }}
+        /* تحسين شكل النص عند التمرير */
+        .scrolling-content span {{
+            display: inline-block;
+            padding: 0 10px;
+        }}
+        </style>
+        <div class="scrolling-wrapper">
+            <div class="scrolling-content">
+                {text_to_scroll}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.info("✅ لا توجد تنبيهات صيانة حالياً.")
+        st.success("✅ لا توجد صيانات متأخرة أو قادمة.")
     
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار")
     
-    # 3. آخر الأحداث (بدون تمرير تلقائي)
+    # 1. آخر الأحداث (مطوية)
     with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
         activity_log = load_activity_log()
         filtered_log = []
@@ -2838,7 +2824,7 @@ with tabs[idx]:
         else:
             st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
     
-    # 4. قطع الغيار الحرجة (بدون تمرير تلقائي)
+    # 2. قطع الغيار الحرجة (مطوية)
     with st.expander("⚠️ قطع غيار حرجة", expanded=False):
         critical = get_critical_spare_parts()
         if username != "admin" and user_role != "admin":
