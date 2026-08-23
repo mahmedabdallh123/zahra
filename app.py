@@ -2704,13 +2704,26 @@ with tabs[idx]:
 idx += 1
 
 # ------------------------------- تبويب الإشعارات (معدل مع تحديث تلقائي وتمرير داخلي) -------------------------------
+# ------------------------------- تبويب الإشعارات (مع تحديث تلقائي وتمرير تلقائي للأسفل) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
+    # ----- سكريبت التمرير التلقائي للأسفل -----
+    st.components.v1.html("""
+    <script>
+    setTimeout(function() {
+        // البحث عن كل الحاويات التي ارتفاعها 250 بكسل وفيها تمرير
+        var containers = document.querySelectorAll('div[style*="height: 250px"][style*="overflow-y: auto"]');
+        containers.forEach(function(container) {
+            container.scrollTop = container.scrollHeight;
+        });
+    }, 600);
+    </script>
+    """, height=0)
+    
     # ----- خيار التحديث التلقائي -----
-    auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")  # مفعّل افتراضياً
+    auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")
     if auto_refresh:
-        # كود JavaScript لإعادة تحميل الصفحة كل 30 ثانية
         st.components.v1.html("""
         <script>
         setInterval(function() {
@@ -2730,7 +2743,6 @@ with tabs[idx]:
     # ---------- عرض تنبيهات الصيانة بشكل مميز ----------
     st.subheader("🛠️ تنبيهات الصيانة الوقائية")
     
-    # جلب المهام المتأخرة والقادمة
     allowed_equipment = []
     for sheet_name in allowed_sections:
         if sheet_name in all_sheets:
@@ -2745,7 +2757,7 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # 1. الصيانة المتأخرة (الأولوية القصوى) - مع تمرير داخلي
+    # 1. الصيانة المتأخرة (مع تمرير داخلي)
     with st.container(border=True):
         st.markdown("#### 🔴 صيانة متأخرة")
         if not overdue.empty:
@@ -2763,7 +2775,7 @@ with tabs[idx]:
         else:
             st.success("✅ لا توجد صيانات متأخرة.")
     
-    # 2. الصيانة القادمة خلال 3 أيام - مع تمرير داخلي
+    # 2. الصيانة القادمة خلال 3 أيام (مع تمرير داخلي)
     with st.container(border=True):
         st.markdown("#### 🟡 صيانة قادمة خلال 3 أيام")
         if not upcoming.empty:
