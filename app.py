@@ -2668,77 +2668,59 @@ with tabs[idx]:
 idx += 1
 
 # ------------------------------- تبويب الإشعارات (مع تمرير مستمر مثل شريط إعلانات) -------------------------------
+    st.header("🔔 الإشعارات والتنبيهات")# ------------------------------- تبويب الإشعارات (مع تمرير مستمر يعمل 100%) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
-    # ----- سكريبت التمرير المستمر (يعمل تلقائياً على أي حاوية ارتفاع 250 بكسل) -----
+    # ----- سكريبت التمرير المستمر (يعتمد على معرفات محددة) -----
     st.components.v1.html("""
     <script>
     (function() {
-        var scrollSpeed = 0.8;      // سرعة التمرير (أقل = أبطأ)
-        var intervalTime = 50;      // مللي ثانية بين كل حركة
+        var speed = 0.8;
+        var interval = 50;
         var containers = [];
-        var isScrolling = false;
-        var scrollInterval = null;
 
-        // البحث عن الحاويات التي تحتوي على تنبيهات الصيانة
-        function findContainers() {
-            var allDivs = document.querySelectorAll('div[style*="height: 250px"][style*="overflow-y: auto"]');
-            allDivs.forEach(function(div) {
-                if (!containers.includes(div)) {
-                    containers.push(div);
-                    console.log('تم العثور على حاوية جديدة');
+        function getContainer(id) {
+            var el = document.getElementById(id);
+            if (el) {
+                var parent = el.parentElement;
+                while (parent && !(parent.style.overflowY === 'auto' || parent.style.overflow === 'auto')) {
+                    parent = parent.parentElement;
                 }
-            });
-            // إذا وجدنا حاويات ولم نبدأ التمرير بعد، نبدأ
-            if (containers.length > 0 && !isScrolling) {
-                isScrolling = true;
-                startScrolling();
+                if (parent) return parent;
             }
+            return null;
         }
 
-        // بدء التمرير المستمر
         function startScrolling() {
-            if (scrollInterval) clearInterval(scrollInterval);
-            scrollInterval = setInterval(function() {
+            var overdueContainer = getContainer('scroll-overdue');
+            var upcomingContainer = getContainer('scroll-upcoming');
+            if (overdueContainer) containers.push(overdueContainer);
+            if (upcomingContainer) containers.push(upcomingContainer);
+
+            if (containers.length === 0) return;
+
+            setInterval(function() {
                 containers.forEach(function(container) {
                     var maxScroll = container.scrollHeight - container.clientHeight;
                     if (maxScroll <= 0) return;
-                    
-                    // تحديد الاتجاه
-                    if (!container.dataset.direction) {
-                        container.dataset.direction = 'down';
-                    }
-                    if (container.scrollTop >= maxScroll - 5) {
-                        container.dataset.direction = 'up';
-                    } else if (container.scrollTop <= 5) {
-                        container.dataset.direction = 'down';
-                    }
-                    
-                    // التمرير
+
+                    if (!container.dataset.direction) container.dataset.direction = 'down';
+                    if (container.scrollTop >= maxScroll - 5) container.dataset.direction = 'up';
+                    else if (container.scrollTop <= 5) container.dataset.direction = 'down';
+
                     if (container.dataset.direction === 'down') {
-                        container.scrollTop += scrollSpeed;
+                        container.scrollTop += speed;
                     } else {
-                        container.scrollTop -= scrollSpeed;
+                        container.scrollTop -= speed;
                     }
                 });
-            }, intervalTime);
+            }, interval);
         }
 
-        // البحث الأولي بعد تحميل الصفحة
-        setTimeout(function() {
-            findContainers();
-        }, 1500);
-
-        // مراقبة التغييرات في DOM (للبحث عن حاويات جديدة بعد إعادة التحميل الجزئي)
-        var observer = new MutationObserver(function(mutations) {
-            findContainers();
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-
-        // عند إعادة تحميل الصفحة (بعد التحديث التلقائي)
+        setTimeout(startScrolling, 1500);
         window.addEventListener('load', function() {
-            setTimeout(findContainers, 2000);
+            setTimeout(startScrolling, 2000);
         });
     })();
     </script>
@@ -2784,6 +2766,7 @@ with tabs[idx]:
     with st.container(border=True):
         st.markdown("#### 🔴 صيانة متأخرة")
         if not overdue.empty:
+            st.markdown('<div id="scroll-overdue"></div>', unsafe_allow_html=True)
             with st.container(height=250):
                 for _, row in overdue.iterrows():
                     eq = row['المعدة']
@@ -2802,6 +2785,7 @@ with tabs[idx]:
     with st.container(border=True):
         st.markdown("#### 🟡 صيانة قادمة خلال 3 أيام")
         if not upcoming.empty:
+            st.markdown('<div id="scroll-upcoming"></div>', unsafe_allow_html=True)
             with st.container(height=250):
                 for _, row in upcoming.iterrows():
                     eq = row['المعدة']
