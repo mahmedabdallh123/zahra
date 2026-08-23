@@ -2667,36 +2667,51 @@ with tabs[idx]:
 idx += 1
 
 # ------------------------------- تبويب الإشعارات (مع تمرير مستمر يعمل 100%) -------------------------------
+# ------------------------------- تبويب الإشعارات (تمرير رأسي تلقائي) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
     
-    # ----- سكريبت التمرير المستمر (يعتمد على معرفات محددة) -----
+    # ----- سكريبت التمرير الرأسي المستمر -----
     st.components.v1.html("""
     <script>
     (function() {
-        var speed = 0.8;
-        var interval = 50;
+        var speed = 0.8;          // سرعة التمرير (بكسل لكل خطوة)
+        var interval = 50;        // مللي ثانية بين كل حركة
         var containers = [];
 
-        function getContainer(id) {
-            var el = document.getElementById(id);
-            if (el) {
-                var parent = el.parentElement;
-                while (parent && !(parent.style.overflowY === 'auto' || parent.style.overflow === 'auto')) {
-                    parent = parent.parentElement;
+        function findAndSetupContainer(id) {
+            var element = document.getElementById(id);
+            if (!element) return null;
+            // ابحث عن أقرب أب قابل للتمرير (overflow-y: auto أو overflow: auto)
+            var parent = element.parentElement;
+            while (parent && parent !== document.body) {
+                var style = window.getComputedStyle(parent);
+                if (style.overflowY === 'auto' || style.overflow === 'auto') {
+                    // تأكد من أن الارتفاع محدد
+                    if (parent.clientHeight < 50) {
+                        parent.style.height = '250px';
+                    }
+                    return parent;
                 }
-                if (parent) return parent;
+                parent = parent.parentElement;
             }
-            return null;
+            // إذا لم نجد، نضبط العنصر نفسه
+            element.style.display = 'block';
+            element.style.height = '250px';
+            element.style.overflowY = 'auto';
+            return element;
         }
 
         function startScrolling() {
-            var overdueContainer = getContainer('scroll-overdue');
-            var upcomingContainer = getContainer('scroll-upcoming');
+            var overdueContainer = findAndSetupContainer('scroll-overdue');
+            var upcomingContainer = findAndSetupContainer('scroll-upcoming');
             if (overdueContainer) containers.push(overdueContainer);
             if (upcomingContainer) containers.push(upcomingContainer);
 
-            if (containers.length === 0) return;
+            if (containers.length === 0) {
+                console.log('لم يتم العثور على حاويات للتمرير');
+                return;
+            }
 
             setInterval(function() {
                 containers.forEach(function(container) {
@@ -2716,9 +2731,10 @@ with tabs[idx]:
             }, interval);
         }
 
-        setTimeout(startScrolling, 1500);
+        // تشغيل بعد تحميل الصفحة
+        setTimeout(startScrolling, 2000);
         window.addEventListener('load', function() {
-            setTimeout(startScrolling, 2000);
+            setTimeout(startScrolling, 2500);
         });
     })();
     </script>
@@ -2760,7 +2776,7 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # 1. الصيانة المتأخرة (مع تمرير مستمر)
+    # 1. الصيانة المتأخرة (مع تمرير رأسي)
     with st.container(border=True):
         st.markdown("#### 🔴 صيانة متأخرة")
         if not overdue.empty:
@@ -2779,7 +2795,7 @@ with tabs[idx]:
         else:
             st.success("✅ لا توجد صيانات متأخرة.")
     
-    # 2. الصيانة القادمة خلال 3 أيام (مع تمرير مستمر)
+    # 2. الصيانة القادمة خلال 3 أيام (مع تمرير رأسي)
     with st.container(border=True):
         st.markdown("#### 🟡 صيانة قادمة خلال 3 أيام")
         if not upcoming.empty:
