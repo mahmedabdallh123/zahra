@@ -2756,7 +2756,7 @@ with tabs[idx]:
         .scrolling-content {{
             display: inline-block;
             animation: scroll-text 1110s linear infinite;  /* زيادة المدة من 20s إلى 45s (أبطأ) */
-            font-size: 40px;  /* زيادة حجم الخط من 18px إلى 26px */
+            font-size: 80px;  /* زيادة حجم الخط من 18px إلى 26px */
             font-weight: bold;
             color: #1a1a2e;
             padding-left: 100%;
