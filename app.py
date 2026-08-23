@@ -2901,7 +2901,7 @@ with tabs[idx]:
                     else:
                         st.error("❌ فشل رفع الصورة، حاول مرة أخرى.")
         else:
-            st.info("📷 لم يتم رفع صورة المطور بعد. سيتم رفعها بواسطة مدير النظام.")import streamlit as st
+            st.info("📷 لم يتم رفع صورة المطور بعد. سيتم رفعها بواسطة مدير النظام.")
 import pandas as pd
 import numpy as np
 import json
