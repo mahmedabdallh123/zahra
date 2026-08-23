@@ -2359,6 +2359,7 @@ def manage_data_edit(sheets_edit):
     
     username = st.session_state.get("username")
     
+    # ---------- التبويب 1: عرض وتعديل الأقسام ----------
     with tabs_edit[0]:
         st.subheader("🗂️ عرض وتعديل بيانات الأقسام")
         st.info("🔍 يمكنك البحث والفلترة (بالنص، التاريخ، الماكينة) ثم تعديل البيانات مباشرة. يتم الحفظ والرفع إلى GitHub تلقائياً عند الضغط على '💾 حفظ التغييرات'.")
@@ -2415,11 +2416,9 @@ def manage_data_edit(sheets_edit):
             
             df_filtered = df_original.copy()
             
-            # فلتر الماكينة
             if selected_equipment != "الكل" and "المعدة" in df_filtered.columns:
                 df_filtered = df_filtered[df_filtered["المعدة"] == selected_equipment]
             
-            # فلتر النص العام
             if search_text:
                 mask = pd.Series([False] * len(df_filtered), index=df_filtered.index)
                 for col in df_filtered.columns:
@@ -2427,7 +2426,6 @@ def manage_data_edit(sheets_edit):
                         mask |= df_filtered[col].astype(str).str.contains(search_text, case=False, na=False)
                 df_filtered = df_filtered[mask]
             
-            # فلتر التاريخ
             if use_date_filter and date_col and start_date and end_date:
                 try:
                     df_filtered[date_col] = pd.to_datetime(df_filtered[date_col], errors='coerce')
@@ -2568,6 +2566,7 @@ def manage_data_edit(sheets_edit):
                         for fault, count in top_faults.items():
                             st.write(f"- {fault}: {count}")
     
+    # باقي التبويبات
     with tabs_edit[1]:
         if sheets_edit:
             all_dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
