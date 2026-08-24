@@ -44,6 +44,37 @@ APP_CONFIG = {
 
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
+# ------------------------------- استيرادات إضافية -------------------------------
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+        plt.rcParams['font.family'] = 'Arial'
+        MATPLOTLIB_AVAILABLE = True
+    except ImportError:
+        MATPLOTLIB_AVAILABLE = False
+
+# ------------------------------- ثوابت إضافية -------------------------------
+USERS_FILE = "users.json"
+STATE_FILE = "state.json"
+SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
+MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
+IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
+EQUIPMENT_CONFIG_FILE = "equipment_config.json"
+SUPPORT_CONFIG_FILE = "support_config.json"
+
+GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
+GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/stations/refs/heads/main/users.json"
+GITHUB_REPO_USERS = "mahmedabdallh123/stations"
+GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
+GITHUB_AVAILABLE = GITHUB_TOKEN is not None
+ACTIVITY_LOG_FILE = "activity_log.json"
+
 # ------------------------------- دوال واتساب -------------------------------
 def send_whatsapp_notification(to_number, message):
     """إرسال رسالة واتساب عبر Twilio"""
@@ -116,7 +147,7 @@ def build_whatsapp_maintenance_execution_message(equipment, task, performed_by, 
     lines.append("✅ *تم تنفيذ صيانة وقائية - نظام CMMS*")
     lines.append(f"📅 تاريخ التنفيذ: {execution_date}")
     lines.append(f"⚙️ الماكينة: {equipment}")
-    lines.append(f"🔧 البند: {task}")
+   lines.append(f"🔧 البند: {task}")
     lines.append(f"👨‍🔧 تم بواسطة: {performed_by}")
     lines.append(f"🏭 القسم: {section}")
     lines.append("_" * 30)
