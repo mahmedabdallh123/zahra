@@ -11,6 +11,14 @@ import io
 import uuid
 from PIL import Image
 from github import Github, GithubException
+import threading
+
+# ------------------------------- إضافات واتساب -------------------------------
+try:
+    from twilio.rest import Client
+    TWILIO_AVAILABLE = True
+except ImportError:
+    TWILIO_AVAILABLE = False
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
@@ -30,41 +38,120 @@ APP_CONFIG = {
     "SPARE_PARTS_COLUMNS": ["اسم القطعة", "المقاس", "قوه الشد", "الرصيد الموجود", "مدة التوريد", "ضرورية", "القسم", "رابط_الصورة"],
     "MAINTENANCE_SHEET": "صيانة_وقائية",
     "MAINTENANCE_COLUMNS": ["المعدة", "نوع_الصيانة", "اسم_البند", "الفترة_بالأيام", "آخر_تنفيذ", "التاريخ_التالي", "ملاحظات", "قطع_غيار_مستخدمة_افتراضية", "رابط_الصورة"],
-    "GENERAL_SECTION": "عام"
+    "GENERAL_SECTION": "عام",
+    "WHATSAPP_RECIPIENTS": ["whatsapp:+201234567890"]  # قائمة أرقام المستلمين
 }
 
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
-# ------------------------------- استيرادات إضافية -------------------------------
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
+# ------------------------------- دوال واتساب -------------------------------
+def send_whatsapp_notification(to_number, message):
+    """إرسال رسالة واتساب عبر Twilio"""
+    if not TWILIO_AVAILABLE:
+        return False, "❌ مكتبة Twilio غير مثبتة. قم بتثبيتها باستخدام: pip install twilio"
+    
+    # محاولة الحصول على البيانات من session_state ثم من secrets
+    account_sid = st.session_state.get("temp_account_sid", None)
+    auth_token = st.session_state.get("temp_auth_token", None)
+    from_number = st.session_state.get("temp_whatsapp_from", None)
+    
+    if not account_sid or not auth_token or not from_number:
+        try:
+            account_sid = st.secrets["twilio"]["account_sid"]
+            auth_token = st.secrets["twilio"]["auth_token"]
+            from_number = st.secrets["twilio"]["whatsapp_from"]
+        except:
+            return False, "❌ بيانات Twilio غير موجودة. يرجى إدخالها في الإعدادات."
+    
     try:
-        import matplotlib.pyplot as plt
-        import matplotlib.dates as mdates
-        plt.rcParams['font.family'] = 'Arial'
-        MATPLOTLIB_AVAILABLE = True
-    except ImportError:
-        MATPLOTLIB_AVAILABLE = False
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            from_=from_number,
+            body=message,
+            to=to_number
+        )
+        return True, f"✅ تم إرسال الرسالة بنجاح"
+    except Exception as e:
+        return False, f"❌ فشل إرسال الرسالة: {str(e)}"
 
-# ------------------------------- ثوابت إضافية -------------------------------
-USERS_FILE = "users.json"
-STATE_FILE = "state.json"
-SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
-MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
-IMAGES_FOLDER = APP_CONFIG["IMAGES_FOLDER"]
-EQUIPMENT_CONFIG_FILE = "equipment_config.json"
-SUPPORT_CONFIG_FILE = "support_config.json"
+def send_whatsapp_to_all(message):
+    """إرسال رسالة واتساب لجميع المستلمين المسجلين"""
+    recipients = APP_CONFIG.get("WHATSAPP_RECIPIENTS", [])
+    if not recipients:
+        return False, "❌ لا يوجد مستلمين مسجلين"
+    
+    success_count = 0
+    errors = []
+    for recipient in recipients:
+        success, msg = send_whatsapp_notification(recipient, message)
+        if success:
+            success_count += 1
+        else:
+            errors.append(f"{recipient}: {msg}")
+    
+    if success_count == len(recipients):
+        return True, f"✅ تم إرسال الرسالة لجميع المستلمين ({success_count})"
+    elif success_count > 0:
+        return True, f"⚠️ تم إرسال الرسالة لـ {success_count} من {len(recipients)} مستلم. الأخطاء: {'; '.join(errors)}"
+    else:
+        return False, f"❌ فشل إرسال الرسالة لجميع المستلمين. الأخطاء: {'; '.join(errors)}"
 
-GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
-GITHUB_USERS_URL = "https://raw.githubusercontent.com/mahmedabdallh123/stations/refs/heads/main/users.json"
-GITHUB_REPO_USERS = "mahmedabdallh123/stations"
-GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
-GITHUB_AVAILABLE = GITHUB_TOKEN is not None
-ACTIVITY_LOG_FILE = "activity_log.json"
+def build_whatsapp_event_message(equipment, event_desc, correction_desc, performed_by, section, date):
+    """بناء رسالة عند إضافة حدث عطل جديد"""
+    lines = []
+    lines.append("🔴 *عطل جديد - نظام CMMS*")
+    lines.append(f"📅 التاريخ: {date}")
+    lines.append(f"⚙️ الماكينة: {equipment}")
+    lines.append(f"🏭 القسم: {section}")
+    lines.append(f"⚠️ العطل: {event_desc}")
+    lines.append(f"🔧 الإجراء التصحيحي: {correction_desc}")
+    lines.append(f"👨‍🔧 تم بواسطة: {performed_by}")
+    lines.append("_" * 30)
+    lines.append("🔔 تم تسجيل عطل جديد، يرجى المتابعة.")
+    return "\n".join(lines)
+
+def build_whatsapp_maintenance_execution_message(equipment, task, performed_by, execution_date, section):
+    """بناء رسالة عند تنفيذ صيانة وقائية"""
+    lines = []
+    lines.append("✅ *تم تنفيذ صيانة وقائية - نظام CMMS*")
+    lines.append(f"📅 تاريخ التنفيذ: {execution_date}")
+    lines.append(f"⚙️ الماكينة: {equipment}")
+    lines.append(f"🔧 البند: {task}")
+    lines.append(f"👨‍🔧 تم بواسطة: {performed_by}")
+    lines.append(f"🏭 القسم: {section}")
+    lines.append("_" * 30)
+    lines.append("✅ تم تنفيذ الصيانة الوقائية بنجاح.")
+    return "\n".join(lines)
+
+def build_whatsapp_maintenance_due_message(equipment, task, due_date, days_late, section):
+    """بناء رسالة عند اقتراب موعد الصيانة أو تأخرها"""
+    lines = []
+    if days_late > 0:
+        lines.append("🔴 *صيانة متأخرة - نظام CMMS*")
+        lines.append(f"⚠️ تأخرت الصيانة لمدة {days_late} يوم")
+    else:
+        lines.append("🟡 *تنبيه صيانة قادمة - نظام CMMS*")
+        lines.append(f"⏰ متبقٍ {abs(days_late)} يوم على موعد الصيانة")
+    lines.append(f"⚙️ الماكينة: {equipment}")
+    lines.append(f"🔧 البند: {task}")
+    lines.append(f"📅 التاريخ المستحق: {due_date}")
+    lines.append(f"🏭 القسم: {section}")
+    lines.append("_" * 30)
+    lines.append("🔔 يرجى اتخاذ الإجراء اللازم.")
+    return "\n".join(lines)
+
+def build_whatsapp_critical_parts_message(parts):
+    """بناء رسالة عند نقص قطع الغيار"""
+    if not parts:
+        return None
+    lines = []
+    lines.append("⚠️ *تنبيه قطع غيار حرجة - نظام CMMS*")
+    for part in parts:
+        lines.append(f"🔴 {part['اسم القطعة']} - الرصيد: {part['الرصيد الموجود']} (حد الإنذار: {part['حد_الإنذار']})")
+        lines.append(f"   📍 القسم: {part.get('القسم', 'غير محدد')}")
+    lines.append("_" * 30)
+    lines.append("🔔 يرجى إعادة توريد القطع المذكورة.")
+    return "\n".join(lines)
 
 # ------------------------------- دوال رفع الصور -------------------------------
 def upload_image_to_github(image_file, entity_type, entity_id, custom_filename=None):
@@ -206,6 +293,16 @@ def get_critical_spare_parts():
     critical = df[(df["ضرورية"] == "نعم") & (df["الرصيد الموجود"] < df["حد_الإنذار"])]
     result = critical[["اسم القطعة", "القسم", "الرصيد الموجود", "حد_الإنذار"]].to_dict('records')
     return result
+
+def send_critical_parts_notification():
+    """إرسال إشعار قطع غيار حرجة عبر واتساب"""
+    critical = get_critical_spare_parts()
+    if critical:
+        message = build_whatsapp_critical_parts_message(critical)
+        if message:
+            def send():
+                send_whatsapp_to_all(message)
+            threading.Thread(target=send, daemon=True).start()
 
 # ------------------------------- دالة منع التكرار -------------------------------
 def is_duplicate_event(df, new_row, compare_columns=None, ignore_columns=None, time_window_days=0):
@@ -586,6 +683,57 @@ def get_upcoming_maintenance(days_ahead=3):
     overdue = df[df["التاريخ_التالي"] < pd.Timestamp(today)]
     upcoming = df[(df["التاريخ_التالي"] >= pd.Timestamp(today)) & (df["التاريخ_التالي"] <= pd.Timestamp(today + timedelta(days=days_ahead)))]
     return overdue, upcoming
+
+def check_and_notify_maintenance_due():
+    """التحقق من الصيانة المتأخرة وإرسال إشعارات واتساب"""
+    overdue, upcoming = get_upcoming_maintenance(3)
+    
+    # إرسال إشعارات للصيانة المتأخرة
+    if not overdue.empty:
+        for _, row in overdue.iterrows():
+            eq = row['المعدة']
+            task = row['اسم_البند']
+            due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+            days_late = (datetime.now().date() - row['التاريخ_التالي'].date()).days if pd.notna(row['التاريخ_التالي']) else 0
+            section = "غير محدد"
+            # محاولة إيجاد القسم
+            all_sheets = load_all_sheets()
+            if all_sheets:
+                for sheet_name, df in all_sheets.items():
+                    if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+                        continue
+                    if "المعدة" in df.columns and eq in df["المعدة"].values:
+                        section = sheet_name
+                        break
+            
+            message = build_whatsapp_maintenance_due_message(eq, task, due_date, days_late, section)
+            # إرسال في خيط منفصل
+            def send():
+                send_whatsapp_to_all(message)
+            threading.Thread(target=send, daemon=True).start()
+    
+    # إرسال إشعارات للصيانة القادمة (إذا كانت خلال يوم واحد)
+    if not upcoming.empty:
+        for _, row in upcoming.iterrows():
+            days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
+            if days <= 1:  # إذا كانت خلال يوم واحد
+                eq = row['المعدة']
+                task = row['اسم_البند']
+                due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
+                section = "غير محدد"
+                all_sheets = load_all_sheets()
+                if all_sheets:
+                    for sheet_name, df in all_sheets.items():
+                        if sheet_name in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]:
+                            continue
+                        if "المعدة" in df.columns and eq in df["المعدة"].values:
+                            section = sheet_name
+                            break
+                
+                message = build_whatsapp_maintenance_due_message(eq, task, due_date, -days, section)
+                def send():
+                    send_whatsapp_to_all(message)
+                threading.Thread(target=send, daemon=True).start()
 
 # ------------------------------- دوال تحليل الأعطال -------------------------------
 def flexible_date_parser(date_series):
@@ -1821,6 +1969,7 @@ def add_new_event(sheets_edit, sheet_name):
                 if col not in new_row:
                     new_row[col] = ""
 
+            # التحقق من التكرار
             if is_duplicate_event(
                 df, 
                 new_row, 
@@ -1851,6 +2000,25 @@ def add_new_event(sheets_edit, sheet_name):
                 st.success("✅ تم إضافة الحدث بنجاح ورفعه إلى GitHub!")
                 if warning_msg:
                     st.warning(warning_msg)
+                
+                # ==================== إرسال إشعار واتساب تلقائي ====================
+                try:
+                    message = build_whatsapp_event_message(
+                        selected_equipment, 
+                        event_desc, 
+                        correction_desc, 
+                        servised_by, 
+                        sheet_name, 
+                        event_date.strftime("%Y-%m-%d")
+                    )
+                    def send_whatsapp():
+                        send_whatsapp_to_all(message)
+                    threading.Thread(target=send_whatsapp, daemon=True).start()
+                    st.info("📱 جاري إرسال إشعار واتساب...")
+                except Exception as e:
+                    st.warning(f"⚠️ فشل إرسال إشعار واتساب: {e}")
+                # ================================================================
+                
                 st.rerun()
             else:
                 st.error("❌ فشل الحفظ")
@@ -1869,6 +2037,7 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
     idx = df[mask].index[0]
     period_days = df.loc[idx, "الفترة_بالأيام"]
 
+    # منع تكرار التنفيذ في نفس التاريخ
     last_exec = df.loc[idx, "آخر_تنفيذ"]
     if pd.notna(last_exec) and hasattr(last_exec, 'date'):
         if last_exec.date() == execution_date:
@@ -1907,6 +2076,23 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
 
     log_activity("execute_maintenance", f"تم تنفيذ صيانة '{task_name}' للماكينة {equipment_name} بواسطة {performed_by}", section=section)
     result_msg = f"تم تنفيذ الصيانة '{task_name}' بتاريخ {execution_date.strftime('%Y-%m-%d')} بواسطة {performed_by}. التاريخ التالي: {next_date.strftime('%Y-%m-%d')}" + (f" {warning_msg}" if warning_msg else "")
+    
+    # ==================== إرسال إشعار واتساب تلقائي ====================
+    try:
+        message = build_whatsapp_maintenance_execution_message(
+            equipment_name,
+            task_name,
+            performed_by,
+            execution_date.strftime("%Y-%m-%d"),
+            section
+        )
+        def send_whatsapp():
+            send_whatsapp_to_all(message)
+        threading.Thread(target=send_whatsapp, daemon=True).start()
+    except Exception as e:
+        pass  # لا نعرض خطأ حتى لا يزعج المستخدم
+    # ================================================================
+    
     return True, result_msg
 
 def add_maintenance_as_event(sheets_edit, equipment_name, task_name, execution_date, performed_by, used_spare_part="", used_quantity=1, image_url=None):
@@ -2666,10 +2852,10 @@ with tabs[idx]:
     failures_analysis_tab(all_sheets)
 idx += 1
 
-# ------------------------------- تبويب الإشعارات (شريط إعلاني + جدول) -------------------------------
+# ------------------------------- تبويب الإشعارات (شريط إعلاني + جدول + واتساب تلقائي) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
-
+    
     # ----- خيار التحديث التلقائي -----
     auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")
     if auto_refresh:
@@ -2681,6 +2867,13 @@ with tabs[idx]:
         </script>
         """, height=0)
         st.info("✅ التحديث التلقائي مفعّل. سيتم تحديث الصفحة كل 30 ثانية.")
+    
+    # ========== فحص الصيانة المتأخرة وإرسال إشعارات تلقائية ==========
+    try:
+        check_and_notify_maintenance_due()
+    except Exception as e:
+        pass  # لا نعرض الخطأ حتى لا يزعج المستخدم
+    # =================================================================
 
     clean_old_activity_log(days_to_keep=1)
     
@@ -2744,8 +2937,8 @@ with tabs[idx]:
         st.markdown(f"""
         <style>
         @keyframes scroll-text {{
-            0% {{ transform: translateX(-100%); }}
-            100% {{ transform: translateX(100%); }}
+            0% {{ transform: translateX(100%); }}
+            100% {{ transform: translateX(-100%); }}
         }}
         .scrolling-wrapper {{
             overflow: hidden;
@@ -2784,7 +2977,6 @@ with tabs[idx]:
     st.markdown("---")
     st.subheader("📋 تفاصيل الصيانة (جدول)")
     
-    # بناء DataFrame للصيانة لعرضه في جدول
     maintenance_df_data = []
     for _, row in overdue.iterrows():
         eq = row['المعدة']
@@ -2823,9 +3015,37 @@ with tabs[idx]:
     
     if maintenance_df_data:
         df_display = pd.DataFrame(maintenance_df_data)
-        st.dataframe(df_display, use_container_width=True, height=400)
+        st.dataframe(df_display, use_container_width=True, height=300)
     else:
         st.info("لا توجد بيانات صيانة لعرضها في الجدول.")
+    
+    st.markdown("---")
+    
+    # ==================== قسم إعدادات واتساب ====================
+    st.subheader("📱 إعدادات إشعارات واتساب التلقائية")
+    st.info("سيتم إرسال إشعارات تلقائية عند: إضافة حدث عطل جديد، تنفيذ صيانة، أو اقتراب موعد صيانة.")
+    
+    with st.expander("⚙️ إعدادات Twilio (مرة واحدة)", expanded=False):
+        st.info("أدخل بيانات Twilio الخاصة بك لحساب واتساب Business.")
+        temp_account_sid = st.text_input("Account SID", value=st.session_state.get("temp_account_sid", ""), key="temp_account_sid")
+        temp_auth_token = st.text_input("Auth Token", type="password", value="", key="temp_auth_token")
+        temp_whatsapp_from = st.text_input("رقم واتساب المرسل (بالصيغة: whatsapp:+...)", value=st.session_state.get("temp_whatsapp_from", ""), key="temp_whatsapp_from")
+        
+        st.caption("📌 أرقام المستلمين المسجلة في النظام:")
+        recipients = APP_CONFIG.get("WHATSAPP_RECIPIENTS", [])
+        for i, rec in enumerate(recipients):
+            st.write(f"{i+1}. {rec}")
+        
+        if st.button("💾 حفظ بيانات Twilio مؤقتاً", key="save_twilio_temp"):
+            if temp_account_sid and temp_auth_token and temp_whatsapp_from:
+                st.session_state.temp_account_sid = temp_account_sid
+                st.session_state.temp_auth_token = temp_auth_token
+                st.session_state.temp_whatsapp_from = temp_whatsapp_from
+                st.success("✅ تم حفظ بيانات Twilio مؤقتاً!")
+            else:
+                st.warning("⚠️ الرجاء إدخال جميع الحقول.")
+    
+    # ==============================================================
     
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار (مطوية)")
@@ -2870,7 +3090,7 @@ with tabs[idx]:
         else:
             st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
     
-    # 2. قطع الغيار الحرجة (مطوية) – نعرضها هنا أيضاً للرجوع إليها بسهولة
+    # 2. قطع الغيار الحرجة (مطوية)
     with st.expander("⚠️ قطع غيار حرجة (تفاصيل)", expanded=False):
         critical = get_critical_spare_parts()
         if username != "admin" and user_role != "admin":
