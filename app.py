@@ -2744,8 +2744,8 @@ with tabs[idx]:
         st.markdown(f"""
         <style>
         @keyframes scroll-text {{
-            0% {{ transform: translateX(100%); }}
-            100% {{ transform: translateX(-100%); }}
+            0% {{ transform: translateX(-100%); }}
+            100% {{ transform: translateX(100%); }}
         }}
         .scrolling-wrapper {{
             overflow: hidden;
