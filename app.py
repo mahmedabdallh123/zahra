@@ -147,7 +147,7 @@ def build_whatsapp_maintenance_execution_message(equipment, task, performed_by, 
     lines.append("✅ *تم تنفيذ صيانة وقائية - نظام CMMS*")
     lines.append(f"📅 تاريخ التنفيذ: {execution_date}")
     lines.append(f"⚙️ الماكينة: {equipment}")
-   lines.append(f"🔧 البند: {task}")
+    lines.append(f"🔧 البند: {task}")  # تم إصلاح المسافة البادئة (4 مسافات)
     lines.append(f"👨‍🔧 تم بواسطة: {performed_by}")
     lines.append(f"🏭 القسم: {section}")
     lines.append("_" * 30)
