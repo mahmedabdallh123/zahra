@@ -37,6 +37,11 @@ APP_CONFIG = {
     "GENERAL_SECTION": "عام"
 }
 
+# ------------------------------- إعدادات البريد الإلكتروني الثابتة -------------------------------
+EMAIL_SENDER = "belyarn8@gmail.com"
+EMAIL_PASSWORD = "mgcujjkwfwadpqqk"  # بدون مسافات
+EMAIL_RECIPIENTS = "medotatch124@gmail.com"
+
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
 
 # ------------------------------- استيرادات إضافية -------------------------------
@@ -74,16 +79,21 @@ ACTIVITY_LOG_FILE = "activity_log.json"
 def send_email_notification(recipient_email, subject, body):
     """إرسال بريد إلكتروني باستخدام SMTP (Gmail)"""
     try:
-        # محاولة قراءة بيانات SMTP من session_state أو من secrets
         smtp_server = "smtp.gmail.com"
         smtp_port = 587
+        # جلب بيانات SMTP من session_state، ثم من secrets، ثم من الثوابت
         sender_email = st.session_state.get("temp_sender_email", None)
         sender_password = st.session_state.get("temp_sender_password", None)
         
         if not sender_email or not sender_password:
             # حاول من secrets
-            sender_email = st.secrets.get("email", {}).get("sender", "")
-            sender_password = st.secrets.get("email", {}).get("password", "")
+            sender_email = st.secrets.get("email", {}).get("sender", None)
+            sender_password = st.secrets.get("email", {}).get("password", None)
+        
+        if not sender_email or not sender_password:
+            # استخدم الثوابت
+            sender_email = EMAIL_SENDER
+            sender_password = EMAIL_PASSWORD
         
         if not sender_email or not sender_password:
             return False, "⚠️ يرجى إدخال بيانات البريد الإلكتروني (المرسل وكلمة المرور) في الإعدادات."
@@ -109,6 +119,9 @@ def send_email_to_all(subject, body):
     if not recipients_str:
         # حاول من secrets
         recipients_str = st.secrets.get("email", {}).get("recipients", "")
+    if not recipients_str:
+        # استخدم الثوابت
+        recipients_str = EMAIL_RECIPIENTS
     if not recipients_str:
         return False, "❌ لا يوجد مستلمين مسجلين. يرجى إدخال عناوين البريد الإلكتروني للمستلمين."
     
@@ -3053,18 +3066,18 @@ with tabs[idx]:
     else:
         st.info("لا توجد بيانات صيانة لعرضها في الجدول.")
     
-           # ==================== إعدادات البريد الإلكتروني ====================
+    # ==================== إعدادات البريد الإلكتروني ====================
     st.markdown("---")
     st.subheader("📧 إعدادات إشعارات البريد الإلكتروني")
     st.info("سيتم إرسال إشعارات بريد إلكتروني تلقائية عند: إضافة حدث عطل، تنفيذ صيانة، أو اقتراب موعد صيانة.")
     
     # تهيئة مفاتيح session_state إذا لم تكن موجودة (آمن)
     if "temp_sender_email" not in st.session_state:
-        st.session_state["temp_sender_email"] = ""
+        st.session_state["temp_sender_email"] = EMAIL_SENDER
     if "temp_sender_password" not in st.session_state:
-        st.session_state["temp_sender_password"] = ""
+        st.session_state["temp_sender_password"] = EMAIL_PASSWORD
     if "temp_recipients" not in st.session_state:
-        st.session_state["temp_recipients"] = ""
+        st.session_state["temp_recipients"] = EMAIL_RECIPIENTS
     
     with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
         st.info("أدخل بيانات حساب Gmail الخاص بك (يُفضل استخدام كلمة مرور التطبيق).")
