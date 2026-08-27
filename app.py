@@ -3053,12 +3053,12 @@ with tabs[idx]:
     else:
         st.info("لا توجد بيانات صيانة لعرضها في الجدول.")
     
-       # ==================== إعدادات البريد الإلكتروني ====================
+           # ==================== إعدادات البريد الإلكتروني ====================
     st.markdown("---")
     st.subheader("📧 إعدادات إشعارات البريد الإلكتروني")
     st.info("سيتم إرسال إشعارات بريد إلكتروني تلقائية عند: إضافة حدث عطل، تنفيذ صيانة، أو اقتراب موعد صيانة.")
     
-    # تهيئة مفاتيح session_state إذا لم تكن موجودة (اختياري للسلامة)
+    # تهيئة مفاتيح session_state إذا لم تكن موجودة (آمن)
     if "temp_sender_email" not in st.session_state:
         st.session_state["temp_sender_email"] = ""
     if "temp_sender_password" not in st.session_state:
@@ -3068,33 +3068,37 @@ with tabs[idx]:
     
     with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
         st.info("أدخل بيانات حساب Gmail الخاص بك (يُفضل استخدام كلمة مرور التطبيق).")
-        temp_sender = st.text_input(
-            "📧 البريد الإلكتروني للمرسل (Gmail)",
-            value=st.session_state["temp_sender_email"],
-            key="temp_sender_email_input"
-        )
-        temp_pass = st.text_input(
-            "🔑 كلمة مرور التطبيق (App Password)",
-            type="password",
-            value=st.session_state["temp_sender_password"],
-            key="temp_sender_password_input"
-        )
-        temp_recipients = st.text_area(
-            "📌 البريد الإلكتروني للمستلمين (افصل بينهم بفواصل)",
-            value=st.session_state["temp_recipients"],
-            key="temp_recipients_input",
-            placeholder="example1@domain.com, example2@domain.com"
-        )
         
-        if st.button("💾 حفظ بيانات البريد مؤقتاً", key="save_email_temp"):
-            if temp_sender and temp_pass and temp_recipients:
-                # استخدام الصيغة مع الأقواس المربعة
-                st.session_state["temp_sender_email"] = temp_sender
-                st.session_state["temp_sender_password"] = temp_pass
-                st.session_state["temp_recipients"] = temp_recipients
-                st.success("✅ تم حفظ بيانات البريد مؤقتاً!")
-            else:
-                st.warning("⚠️ الرجاء إدخال جميع الحقول.")
+        # استخدام st.form لتجميع الحقول والزر معاً
+        with st.form(key="email_settings_form"):
+            temp_sender = st.text_input(
+                "📧 البريد الإلكتروني للمرسل (Gmail)",
+                value=st.session_state["temp_sender_email"],
+                key="temp_sender_email_input"
+            )
+            temp_pass = st.text_input(
+                "🔑 كلمة مرور التطبيق (App Password)",
+                type="password",
+                value=st.session_state["temp_sender_password"],
+                key="temp_sender_password_input"
+            )
+            temp_recipients = st.text_area(
+                "📌 البريد الإلكتروني للمستلمين (افصل بينهم بفواصل)",
+                value=st.session_state["temp_recipients"],
+                key="temp_recipients_input",
+                placeholder="example1@domain.com, example2@domain.com"
+            )
+            
+            # زر الحفظ داخل النموذج
+            submitted = st.form_submit_button("💾 حفظ بيانات البريد مؤقتاً")
+            if submitted:
+                if temp_sender and temp_pass and temp_recipients:
+                    st.session_state["temp_sender_email"] = temp_sender
+                    st.session_state["temp_sender_password"] = temp_pass
+                    st.session_state["temp_recipients"] = temp_recipients
+                    st.success("✅ تم حفظ بيانات البريد مؤقتاً!")
+                else:
+                    st.warning("⚠️ الرجاء إدخال جميع الحقول.")
     
     # ================================================================
     
