@@ -82,33 +82,41 @@ GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
 
-# ------------------------------- دوال البريد الإلكتروني -------------------------------
 def send_email_notification(recipient_email, subject, body):
-    """إرسال بريد إلكتروني باستخدام SMTP (Gmail)"""
+    """إرسال بريد إلكتروني باستخدام SMTP (Gmail) مع رسائل خطأ مفصلة"""
     try:
         smtp_server = "smtp.gmail.com"
         smtp_port = 587
-        # جلب بيانات SMTP من session_state (تم تهيئتها مسبقاً)
         sender_email = st.session_state.get("temp_sender_email")
         sender_password = st.session_state.get("temp_sender_password")
         
         if not sender_email or not sender_password:
             return False, "⚠️ بيانات البريد الإلكتروني غير موجودة في الجلسة. يرجى إدخالها في الإعدادات."
         
+        # إنشاء الرسالة
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
         msg['Subject'] = f"[CMMS] {subject}"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
+        # محاولة الاتصال والخادم
         with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.set_debuglevel(0)  # يمكنك تغيير إلى 1 لعرض تفاصيل الاتصال (للتجربة)
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
         
         return True, "✅ تم إرسال البريد الإلكتروني بنجاح!"
+    
+    except smtplib.SMTPAuthenticationError as e:
+        # هذا الخطأ يظهر عندما تكون بيانات الدخول خاطئة
+        return False, f"❌ فشل المصادقة: اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من استخدام كلمة مرور التطبيق (App Password) وليس كلمة المرور العادية. (تفاصيل: {e})"
+    except smtplib.SMTPException as e:
+        # أخطاء SMTP الأخرى
+        return False, f"❌ خطأ في SMTP: {e}"
     except Exception as e:
-        return False, f"❌ فشل إرسال البريد: {str(e)}"
+        return False, f"❌ خطأ غير متوقع: {str(e)}"
 
 def send_email_to_all(subject, body):
     """إرسال بريد إلكتروني لجميع المستلمين المسجلين"""
@@ -3071,38 +3079,31 @@ with tabs[idx]:
     if "temp_recipients" not in st.session_state:
         st.session_state["temp_recipients"] = EMAIL_RECIPIENTS
     
-    with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
-        st.info("أدخل بيانات حساب Gmail الخاص بك (يُفضل استخدام كلمة مرور التطبيق).")
-        
-        with st.form(key="email_settings_form"):
-            temp_sender = st.text_input(
-                "📧 البريد الإلكتروني للمرسل (Gmail)",
-                value=st.session_state["temp_sender_email"],
-                key="temp_sender_email_input"
-            )
-            temp_pass = st.text_input(
-                "🔑 كلمة مرور التطبيق (App Password)",
-                type="password",
-                value=st.session_state["temp_sender_password"],
-                key="temp_sender_password_input"
-            )
-            temp_recipients = st.text_area(
-                "📌 البريد الإلكتروني للمستلمين (افصل بينهم بفواصل)",
-                value=st.session_state["temp_recipients"],
-                key="temp_recipients_input",
-                placeholder="example1@domain.com, example2@domain.com"
-            )
-            
-            submitted = st.form_submit_button("💾 حفظ بيانات البريد مؤقتاً")
-            if submitted:
-                if temp_sender and temp_pass and temp_recipients:
-                    st.session_state["temp_sender_email"] = temp_sender
-                    st.session_state["temp_sender_password"] = temp_pass
-                    st.session_state["temp_recipients"] = temp_recipients
-                    st.success("✅ تم حفظ بيانات البريد مؤقتاً!")
-                else:
-                    st.warning("⚠️ الرجاء إدخال جميع الحقول.")
-    
+   with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
+    # ... الحقول الموجودة ...
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 حفظ بيانات البريد مؤقتاً", key="save_email_temp"):
+            # ... كود الحفظ ...
+    with col2:
+        if st.button("📧 إرسال بريد تجريبي", key="test_email_btn"):
+            # جلب القيم الحالية من session_state
+            sender = st.session_state.get("temp_sender_email")
+            password = st.session_state.get("temp_sender_password")
+            recipients = st.session_state.get("temp_recipients")
+            if not sender or not password or not recipients:
+                st.warning("⚠️ يرجى حفظ بيانات البريد أولاً.")
+            else:
+                with st.spinner("جاري إرسال بريد تجريبي..."):
+                    success, msg = send_email_to_all(
+                        "📧 بريد تجريبي من نظام CMMS",
+                        "هذه رسالة تجريبية للتأكد من إعدادات البريد الإلكتروني.\n\nإذا وصلتك هذه الرسالة، فهذا يعني أن الإعدادات صحيحة."
+                    )
+                    if success:
+                        st.success(msg)
+                        st.balloons()
+                    else:
+                        st.error(msg)
     # ================================================================
     
     st.markdown("---")
