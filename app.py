@@ -11,7 +11,6 @@ import io
 import uuid
 from PIL import Image
 from github import Github, GithubException
-import threading
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -39,10 +38,18 @@ APP_CONFIG = {
 
 # ------------------------------- إعدادات البريد الإلكتروني الثابتة -------------------------------
 EMAIL_SENDER = "belyarn8@gmail.com"
-EMAIL_PASSWORD = "mgcujjkwfwadpqqk"  # بدون مسافات
+EMAIL_PASSWORD = "mgcujjkwfwadpqqk"  # كلمة مرور التطبيق (App Password)
 EMAIL_RECIPIENTS = "medotatch124@gmail.com"
 
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
+
+# ------------------------------- تهيئة session_state لبيانات البريد (قبل أي استدعاء) -------------------------------
+if "temp_sender_email" not in st.session_state:
+    st.session_state["temp_sender_email"] = EMAIL_SENDER
+if "temp_sender_password" not in st.session_state:
+    st.session_state["temp_sender_password"] = EMAIL_PASSWORD
+if "temp_recipients" not in st.session_state:
+    st.session_state["temp_recipients"] = EMAIL_RECIPIENTS
 
 # ------------------------------- استيرادات إضافية -------------------------------
 try:
@@ -81,22 +88,12 @@ def send_email_notification(recipient_email, subject, body):
     try:
         smtp_server = "smtp.gmail.com"
         smtp_port = 587
-        # جلب بيانات SMTP من session_state، ثم من secrets، ثم من الثوابت
-        sender_email = st.session_state.get("temp_sender_email", None)
-        sender_password = st.session_state.get("temp_sender_password", None)
+        # جلب بيانات SMTP من session_state (تم تهيئتها مسبقاً)
+        sender_email = st.session_state.get("temp_sender_email")
+        sender_password = st.session_state.get("temp_sender_password")
         
         if not sender_email or not sender_password:
-            # حاول من secrets
-            sender_email = st.secrets.get("email", {}).get("sender", None)
-            sender_password = st.secrets.get("email", {}).get("password", None)
-        
-        if not sender_email or not sender_password:
-            # استخدم الثوابت
-            sender_email = EMAIL_SENDER
-            sender_password = EMAIL_PASSWORD
-        
-        if not sender_email or not sender_password:
-            return False, "⚠️ يرجى إدخال بيانات البريد الإلكتروني (المرسل وكلمة المرور) في الإعدادات."
+            return False, "⚠️ بيانات البريد الإلكتروني غير موجودة في الجلسة. يرجى إدخالها في الإعدادات."
         
         msg = MIMEMultipart()
         msg['From'] = sender_email
@@ -116,12 +113,6 @@ def send_email_notification(recipient_email, subject, body):
 def send_email_to_all(subject, body):
     """إرسال بريد إلكتروني لجميع المستلمين المسجلين"""
     recipients_str = st.session_state.get("temp_recipients", "")
-    if not recipients_str:
-        # حاول من secrets
-        recipients_str = st.secrets.get("email", {}).get("recipients", "")
-    if not recipients_str:
-        # استخدم الثوابت
-        recipients_str = EMAIL_RECIPIENTS
     if not recipients_str:
         return False, "❌ لا يوجد مستلمين مسجلين. يرجى إدخال عناوين البريد الإلكتروني للمستلمين."
     
@@ -735,7 +726,6 @@ def check_and_notify_maintenance_due():
             due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
             days_late = (datetime.now().date() - row['التاريخ_التالي'].date()).days if pd.notna(row['التاريخ_التالي']) else 0
             section = "غير محدد"
-            # محاولة إيجاد القسم
             all_sheets = load_all_sheets()
             if all_sheets:
                 for sheet_name, df in all_sheets.items():
@@ -745,21 +735,20 @@ def check_and_notify_maintenance_due():
                         section = sheet_name
                         break
             
-            # إرسال بريد إلكتروني
             try:
                 subject = f"تنبيه صيانة متأخرة: {eq}"
                 body = build_email_maintenance_due_message(eq, task, due_date, days_late, section)
-                def send():
-                    send_email_to_all(subject, body)
-                threading.Thread(target=send, daemon=True).start()
+                success, msg = send_email_to_all(subject, body)
+                if not success:
+                    st.warning(f"فشل إرسال تنبيه صيانة متأخرة: {msg}")
             except Exception as e:
-                pass
+                st.warning(f"خطأ في إرسال تنبيه: {e}")
     
     # إرسال إشعارات للصيانة القادمة (إذا كانت خلال يوم واحد)
     if not upcoming.empty:
         for _, row in upcoming.iterrows():
             days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
-            if days <= 1:  # إذا كانت خلال يوم واحد
+            if days <= 1:
                 eq = row['المعدة']
                 task = row['اسم_البند']
                 due_date = row['التاريخ_التالي'].strftime('%Y-%m-%d') if pd.notna(row['التاريخ_التالي']) else "غير محدد"
@@ -776,11 +765,11 @@ def check_and_notify_maintenance_due():
                 try:
                     subject = f"تنبيه صيانة قادمة: {eq}"
                     body = build_email_maintenance_due_message(eq, task, due_date, -days, section)
-                    def send():
-                        send_email_to_all(subject, body)
-                    threading.Thread(target=send, daemon=True).start()
+                    success, msg = send_email_to_all(subject, body)
+                    if not success:
+                        st.warning(f"فشل إرسال تنبيه صيانة قادمة: {msg}")
                 except Exception as e:
-                    pass
+                    st.warning(f"خطأ في إرسال تنبيه: {e}")
 
 # ------------------------------- دوال تحليل الأعطال -------------------------------
 def flexible_date_parser(date_series):
@@ -1353,18 +1342,18 @@ def search_across_sheets(all_sheets):
 
     username = st.session_state.get("username")
     
-    search_type = st.selectbox("نوع البيانات المراد البحث فيها:", ["الأقسام (الأعطال)", "قطع الغيار", "الصيانة الوقائية"], key="search_type")
+    search_type = st.selectbox("نوع البيانات المراد البحث فيها:", ["الأقسام (الأعطال)", "قطع الغيار", "الصيانة الوقائية"], key="search_type_unique")
 
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
     selected_section_filter = "جميع الأقسام"
     if search_type in ["قطع الغيار", "الصيانة الوقائية"] and allowed_sections:
         section_options = ["جميع الأقسام"] + allowed_sections
-        selected_section_filter = st.selectbox("🏭 القسم:", section_options, key="section_filter")
+        selected_section_filter = st.selectbox("🏭 القسم:", section_options, key="section_filter_unique")
 
     if search_type == "الأقسام (الأعطال)":
         sheet_options = ["جميع الأقسام"] + allowed_sections
-        selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet")
+        selected_sheet = st.selectbox("اختر القسم للبحث:", sheet_options, key="search_sheet_unique")
         
         if selected_sheet != "جميع الأقسام":
             df_temp = all_sheets[selected_sheet]
@@ -1375,13 +1364,13 @@ def search_across_sheets(all_sheets):
                 df_temp = all_sheets[sh_name]
                 all_eq.update(get_equipment_list_from_sheet(df_temp))
             equipment_list = sorted(all_eq)
-        filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq")
+        filter_equipment = st.selectbox("فلتر حسب الماكينة:", ["الكل"] + equipment_list, key="search_eq_unique")
         
         col1, col2 = st.columns(2)
         with col1:
-            general_search = st.text_input("🔍 كلمة البحث العامة (في الحدث/الإجراء):", placeholder="مثال: تسريب زيت, قطع سير...")
+            general_search = st.text_input("🔍 كلمة البحث العامة (في الحدث/الإجراء):", placeholder="مثال: تسريب زيت, قطع سير...", key="general_search_unique")
         with col2:
-            technician_search = st.text_input("👨‍🔧 بحث بالفني (تم بواسطة):", placeholder="أدخل اسم الفني...")
+            technician_search = st.text_input("👨‍🔧 بحث بالفني (تم بواسطة):", placeholder="أدخل اسم الفني...", key="technician_search_unique")
         
         st.markdown("#### 🏷️ فلتر نوع العطل")
         all_fault_types = set()
@@ -1396,32 +1385,32 @@ def search_across_sheets(all_sheets):
                     all_fault_types.update(df_temp["نوع العطل"].dropna().unique())
         fault_type_options = sorted([str(t).strip() for t in all_fault_types if str(t).strip() != ""])
         
-        use_multiselect = st.checkbox("اختيار من القائمة", value=True, key="fault_type_multiselect_check")
+        use_multiselect = st.checkbox("اختيار من القائمة", value=True, key="fault_type_multiselect_check_unique")
         selected_fault_types = []
         custom_fault_type = ""
         if use_multiselect:
             if fault_type_options:
-                selected_fault_types = st.multiselect("اختر نوع العطل (يمكن اختيار أكثر من واحد):", fault_type_options, key="fault_type_multiselect")
+                selected_fault_types = st.multiselect("اختر نوع العطل (يمكن اختيار أكثر من واحد):", fault_type_options, key="fault_type_multiselect_unique")
             else:
                 st.info("لا توجد أنواع أعطال مسجلة مسبقاً.")
         else:
-            custom_fault_type = st.text_input("أو اكتب نوع العطل المطلوب (مطابقة تامة أو جزئية):", key="custom_fault_type_input", placeholder="مثال: كهربائي, ميكانيكي...")
+            custom_fault_type = st.text_input("أو اكتب نوع العطل المطلوب (مطابقة تامة أو جزئية):", key="custom_fault_type_input_unique", placeholder="مثال: كهربائي, ميكانيكي...")
         
         st.markdown("#### نطاق التاريخ")
-        use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter_failures")
+        use_date_filter = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter_failures_unique")
         if use_date_filter:
             col_date1, col_date2 = st.columns(2)
             with col_date1:
-                start_date = st.date_input("من تاريخ:", value=None, key="start_date_failures")
+                start_date = st.date_input("من تاريخ:", value=None, key="start_date_failures_unique")
             with col_date2:
-                end_date = st.date_input("إلى تاريخ:", value=None, key="end_date_failures")
+                end_date = st.date_input("إلى تاريخ:", value=None, key="end_date_failures_unique")
         else:
             start_date = None
             end_date = None
 
-        view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode_failures")
+        view_mode = st.radio("طريقة العرض:", ["جدول", "بطاقات مع الصور"], horizontal=True, key="search_view_mode_failures_unique")
 
-        if st.button("بحث", key="search_btn_failures", type="primary"):
+        if st.button("بحث", key="search_btn_failures_unique", type="primary"):
             results = []
             sheets_to_search = []
             if selected_sheet != "جميع الأقسام":
@@ -1527,7 +1516,7 @@ def search_across_sheets(all_sheets):
                 
                 export_df = combined_results.drop(columns=["رابط_الصورة_موحد"])
                 excel_file = export_filtered_results_to_excel(export_df, "نتائج_البحث")
-                st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download-excel')
+                st.download_button("📥 تحميل نتائج البحث كملف Excel", excel_file, f"search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key='download_excel_unique')
             else:
                 st.warning("لا توجد نتائج مطابقة للبحث")
     
@@ -1545,7 +1534,7 @@ def search_across_sheets(all_sheets):
         if selected_section_filter != "جميع الأقسام":
             df_filtered = df_filtered[df_filtered["القسم"] == selected_section_filter]
         
-        search_term = st.text_input("🔍 كلمة البحث (اسم القطعة، المقاس، القسم...):", key="search_term_spare")
+        search_term = st.text_input("🔍 كلمة البحث (اسم القطعة، المقاس، القسم...):", key="search_term_spare_unique")
         if search_term:
             search_clean = search_term.strip()
             search_columns = ["اسم القطعة", "المقاس", "قوه الشد", "مدة التوريد", "القسم", "رابط_الصورة"]
@@ -1559,7 +1548,7 @@ def search_across_sheets(all_sheets):
             st.success(f"تم العثور على {len(df_filtered)} قطعة")
             st.dataframe(df_filtered, use_container_width=True)
             excel_file = export_filtered_results_to_excel(df_filtered, "قطع_الغيار")
-            st.download_button("📥 تحميل النتائج", excel_file, f"spare_parts_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("📥 تحميل النتائج", excel_file, f"spare_parts_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_spare_unique")
         else:
             st.warning("لا توجد نتائج")
 
@@ -1585,7 +1574,7 @@ def search_across_sheets(all_sheets):
             allowed_equipment = [eq for eq, sec in equipment_to_section.items() if sec == selected_section_filter]
             df_filtered = df_filtered[df_filtered["المعدة"].isin(allowed_equipment)]
         
-        search_term = st.text_input("🔍 كلمة البحث (المعدة، البند، الملاحظات...):", key="search_term_maintenance")
+        search_term = st.text_input("🔍 كلمة البحث (المعدة، البند، الملاحظات...):", key="search_term_maintenance_unique")
         if search_term:
             search_clean = search_term.strip()
             mask = pd.Series([False] * len(df_filtered))
@@ -1596,7 +1585,7 @@ def search_across_sheets(all_sheets):
             df_filtered = df_filtered[mask]
         
         st.markdown("#### نطاق التاريخ")
-        use_date_filter_maint = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter_maintenance")
+        use_date_filter_maint = st.checkbox("تفعيل البحث بالتاريخ", key="use_date_filter_maintenance_unique")
         
         if use_date_filter_maint:
             date_col_options = ["آخر_تنفيذ", "التاريخ_التالي"]
@@ -1605,14 +1594,14 @@ def search_across_sheets(all_sheets):
                 st.warning("⚠️ لا توجد أعمدة تاريخ في بيانات الصيانة الوقائية")
                 date_col_maint = None
             else:
-                date_col_maint = st.selectbox("اختر عمود التاريخ:", available_date_cols, key="date_col_maintenance")
+                date_col_maint = st.selectbox("اختر عمود التاريخ:", available_date_cols, key="date_col_maintenance_unique")
             
             if date_col_maint:
                 col_date1, col_date2 = st.columns(2)
                 with col_date1:
-                    start_date_maint = st.date_input("من تاريخ:", value=None, key="start_date_maintenance")
+                    start_date_maint = st.date_input("من تاريخ:", value=None, key="start_date_maintenance_unique")
                 with col_date2:
-                    end_date_maint = st.date_input("إلى تاريخ:", value=None, key="end_date_maintenance")
+                    end_date_maint = st.date_input("إلى تاريخ:", value=None, key="end_date_maintenance_unique")
             else:
                 start_date_maint = None
                 end_date_maint = None
@@ -1647,7 +1636,7 @@ def search_across_sheets(all_sheets):
             st.success(f"تم العثور على {len(df_filtered)} مهمة صيانة")
             st.dataframe(df_filtered, use_container_width=True)
             excel_file = export_filtered_results_to_excel(df_filtered, "صيانة_وقائية")
-            st.download_button("📥 تحميل النتائج", excel_file, f"maintenance_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("📥 تحميل النتائج", excel_file, f"maintenance_search_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="download_maintenance_unique")
         else:
             st.warning("لا توجد نتائج")
 
@@ -2058,12 +2047,13 @@ def add_new_event(sheets_edit, sheet_name):
                         sheet_name,
                         event_date.strftime("%Y-%m-%d")
                     )
-                    def send_email():
-                        send_email_to_all(subject, body)
-                    threading.Thread(target=send_email, daemon=True).start()
-                    st.info("📧 جاري إرسال إشعار بريد إلكتروني...")
+                    success, msg = send_email_to_all(subject, body)
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
                 except Exception as e:
-                    pass
+                    st.error(f"❌ فشل إرسال البريد: {str(e)}")
                 # ================================================================
                 
                 st.rerun()
@@ -2134,11 +2124,13 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
             execution_date.strftime("%Y-%m-%d"),
             section
         )
-        def send_email():
-            send_email_to_all(subject, body)
-        threading.Thread(target=send_email, daemon=True).start()
+        success, msg = send_email_to_all(subject, body)
+        if success:
+            st.success(msg)
+        else:
+            st.error(msg)
     except Exception as e:
-        pass
+        st.error(f"❌ فشل إرسال البريد: {str(e)}")
     # ================================================================
     
     return True, result_msg
@@ -2593,7 +2585,7 @@ def manage_data_edit(sheets_edit):
     
     username = st.session_state.get("username")
     
-    # ---------- التبويب 1: عرض وتعديل الأقسام ----------
+    # ---------- التويب 1: عرض وتعديل الأقسام ----------
     with tabs_edit[0]:
         st.subheader("🗂️ عرض وتعديل بيانات الأقسام")
         st.info("🔍 يمكنك البحث والفلترة (بالنص، التاريخ، الماكينة) ثم تعديل البيانات مباشرة. يتم الحفظ والرفع إلى GitHub تلقائياً عند الضغط على '💾 حفظ التغييرات'.")
@@ -3071,7 +3063,7 @@ with tabs[idx]:
     st.subheader("📧 إعدادات إشعارات البريد الإلكتروني")
     st.info("سيتم إرسال إشعارات بريد إلكتروني تلقائية عند: إضافة حدث عطل، تنفيذ صيانة، أو اقتراب موعد صيانة.")
     
-    # تهيئة مفاتيح session_state إذا لم تكن موجودة (آمن)
+    # تهيئة مفاتيح session_state إذا لم تكن موجودة
     if "temp_sender_email" not in st.session_state:
         st.session_state["temp_sender_email"] = EMAIL_SENDER
     if "temp_sender_password" not in st.session_state:
@@ -3082,7 +3074,6 @@ with tabs[idx]:
     with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
         st.info("أدخل بيانات حساب Gmail الخاص بك (يُفضل استخدام كلمة مرور التطبيق).")
         
-        # استخدام st.form لتجميع الحقول والزر معاً
         with st.form(key="email_settings_form"):
             temp_sender = st.text_input(
                 "📧 البريد الإلكتروني للمرسل (Gmail)",
@@ -3102,7 +3093,6 @@ with tabs[idx]:
                 placeholder="example1@domain.com, example2@domain.com"
             )
             
-            # زر الحفظ داخل النموذج
             submitted = st.form_submit_button("💾 حفظ بيانات البريد مؤقتاً")
             if submitted:
                 if temp_sender and temp_pass and temp_recipients:
