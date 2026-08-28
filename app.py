@@ -36,76 +36,21 @@ APP_CONFIG = {
     "GENERAL_SECTION": "عام"
 }
 
-    # ==================== إعدادات البريد الإلكتروني ====================
-    st.markdown("---")
-    st.subheader("📧 إعدادات إشعارات البريد الإلكتروني")
-    st.info("سيتم إرسال إشعارات بريد إلكتروني تلقائية عند: إضافة حدث عطل، تنفيذ صيانة، أو اقتراب موعد صيانة.")
-    
-    # تهيئة مفاتيح session_state إذا لم تكن موجودة
-    if "temp_sender_email" not in st.session_state:
-        st.session_state["temp_sender_email"] = EMAIL_SENDER
-    if "temp_sender_password" not in st.session_state:
-        st.session_state["temp_sender_password"] = EMAIL_PASSWORD
-    if "temp_recipients" not in st.session_state:
-        st.session_state["temp_recipients"] = EMAIL_RECIPIENTS
-    
-    with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
-        st.info("أدخل بيانات حساب Gmail الخاص بك (يُفضل استخدام كلمة مرور التطبيق).")
-        
-        with st.form(key="email_settings_form"):
-            temp_sender = st.text_input(
-                "📧 البريد الإلكتروني للمرسل (Gmail)",
-                value=st.session_state["temp_sender_email"],
-                key="temp_sender_email_input"
-            )
-            temp_pass = st.text_input(
-                "🔑 كلمة مرور التطبيق (App Password)",
-                type="password",
-                value=st.session_state["temp_sender_password"],
-                key="temp_sender_password_input"
-            )
-            temp_recipients = st.text_area(
-                "📌 البريد الإلكتروني للمستلمين (افصل بينهم بفواصل)",
-                value=st.session_state["temp_recipients"],
-                key="temp_recipients_input",
-                placeholder="example1@domain.com, example2@domain.com"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                submitted = st.form_submit_button("💾 حفظ بيانات البريد مؤقتاً")
-                if submitted:
-                    if temp_sender and temp_pass and temp_recipients:
-                        st.session_state["temp_sender_email"] = temp_sender
-                        st.session_state["temp_sender_password"] = temp_pass
-                        st.session_state["temp_recipients"] = temp_recipients
-                        st.success("✅ تم حفظ بيانات البريد مؤقتاً!")
-                    else:
-                        st.warning("⚠️ الرجاء إدخال جميع الحقول.")
-            
-            with col2:
-                test_btn = st.form_submit_button("📧 إرسال بريد تجريبي")
-                if test_btn:
-                    if not temp_sender or not temp_pass or not temp_recipients:
-                        st.warning("⚠️ الرجاء حفظ بيانات البريد أولاً.")
-                    else:
-                        # تحديث session_state بالقيم الحالية
-                        st.session_state["temp_sender_email"] = temp_sender
-                        st.session_state["temp_sender_password"] = temp_pass
-                        st.session_state["temp_recipients"] = temp_recipients
-                        
-                        with st.spinner("جاري إرسال بريد تجريبي..."):
-                            success, msg = send_email_to_all(
-                                "📧 بريد تجريبي من نظام CMMS",
-                                "هذه رسالة تجريبية للتأكد من إعدادات البريد الإلكتروني.\n\nإذا وصلتك هذه الرسالة، فهذا يعني أن الإعدادات صحيحة."
-                            )
-                            if success:
-                                st.success(msg)
-                                st.balloons()
-                            else:
-                                st.error(msg)
-    
-    # ================================================================
+# ------------------------------- إعدادات البريد الإلكتروني الثابتة -------------------------------
+EMAIL_SENDER = "belyarn8@gmail.com"
+EMAIL_PASSWORD = "mgcujjkwfwadpqqk"
+EMAIL_RECIPIENTS = "medotatch124@gmail.com"
+
+st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
+
+# ------------------------------- تهيئة session_state لبيانات البريد -------------------------------
+if "temp_sender_email" not in st.session_state:
+    st.session_state["temp_sender_email"] = EMAIL_SENDER
+if "temp_sender_password" not in st.session_state:
+    st.session_state["temp_sender_password"] = EMAIL_PASSWORD
+if "temp_recipients" not in st.session_state:
+    st.session_state["temp_recipients"] = EMAIL_RECIPIENTS
+
 # ------------------------------- استيرادات إضافية -------------------------------
 try:
     import plotly.express as px
@@ -137,6 +82,7 @@ GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
 
+# ------------------------------- دوال البريد الإلكتروني -------------------------------
 def send_email_notification(recipient_email, subject, body):
     """إرسال بريد إلكتروني باستخدام SMTP (Gmail) مع رسائل خطأ مفصلة"""
     try:
@@ -148,16 +94,13 @@ def send_email_notification(recipient_email, subject, body):
         if not sender_email or not sender_password:
             return False, "⚠️ بيانات البريد الإلكتروني غير موجودة في الجلسة. يرجى إدخالها في الإعدادات."
         
-        # إنشاء الرسالة
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
         msg['Subject'] = f"[CMMS] {subject}"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
-        # محاولة الاتصال والخادم
         with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.set_debuglevel(0)  # يمكنك تغيير إلى 1 لعرض تفاصيل الاتصال (للتجربة)
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
@@ -165,10 +108,8 @@ def send_email_notification(recipient_email, subject, body):
         return True, "✅ تم إرسال البريد الإلكتروني بنجاح!"
     
     except smtplib.SMTPAuthenticationError as e:
-        # هذا الخطأ يظهر عندما تكون بيانات الدخول خاطئة
-        return False, f"❌ فشل المصادقة: اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من استخدام كلمة مرور التطبيق (App Password) وليس كلمة المرور العادية. (تفاصيل: {e})"
+        return False, f"❌ فشل المصادقة: اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من استخدام كلمة مرور التطبيق (App Password). (تفاصيل: {e})"
     except smtplib.SMTPException as e:
-        # أخطاء SMTP الأخرى
         return False, f"❌ خطأ في SMTP: {e}"
     except Exception as e:
         return False, f"❌ خطأ غير متوقع: {str(e)}"
@@ -200,7 +141,6 @@ def send_email_to_all(subject, body):
         return False, f"❌ فشل إرسال البريد لجميع المستلمين. الأخطاء: {'; '.join(errors)}"
 
 def build_email_event_message(equipment, event_desc, correction_desc, performed_by, section, date):
-    """بناء محتوى بريد إلكتروني عند إضافة حدث عطل"""
     lines = []
     lines.append("🔴 عطل جديد - نظام CMMS")
     lines.append(f"📅 التاريخ: {date}")
@@ -214,7 +154,6 @@ def build_email_event_message(equipment, event_desc, correction_desc, performed_
     return "\n".join(lines)
 
 def build_email_maintenance_execution_message(equipment, task, performed_by, execution_date, section):
-    """بناء محتوى بريد إلكتروني عند تنفيذ صيانة وقائية"""
     lines = []
     lines.append("✅ تم تنفيذ صيانة وقائية - نظام CMMS")
     lines.append(f"📅 تاريخ التنفيذ: {execution_date}")
@@ -227,7 +166,6 @@ def build_email_maintenance_execution_message(equipment, task, performed_by, exe
     return "\n".join(lines)
 
 def build_email_maintenance_due_message(equipment, task, due_date, days_late, section):
-    """بناء محتوى بريد إلكتروني عند اقتراب موعد الصيانة أو تأخرها"""
     lines = []
     if days_late > 0:
         lines.append("🔴 صيانة متأخرة - نظام CMMS")
@@ -244,7 +182,6 @@ def build_email_maintenance_due_message(equipment, task, due_date, days_late, se
     return "\n".join(lines)
 
 def build_email_critical_parts_message(parts):
-    """بناء محتوى بريد إلكتروني عند نقص قطع الغيار"""
     if not parts:
         return None
     lines = []
@@ -781,7 +718,6 @@ def check_and_notify_maintenance_due():
     """التحقق من الصيانة المتأخرة وإرسال إشعارات بريد إلكتروني"""
     overdue, upcoming = get_upcoming_maintenance(3)
     
-    # إرسال إشعارات للصيانة المتأخرة
     if not overdue.empty:
         for _, row in overdue.iterrows():
             eq = row['المعدة']
@@ -807,7 +743,6 @@ def check_and_notify_maintenance_due():
             except Exception as e:
                 st.warning(f"خطأ في إرسال تنبيه: {e}")
     
-    # إرسال إشعارات للصيانة القادمة (إذا كانت خلال يوم واحد)
     if not upcoming.empty:
         for _, row in upcoming.iterrows():
             days = (row['التاريخ_التالي'].date() - datetime.now().date()).days
@@ -1615,7 +1550,7 @@ def search_across_sheets(all_sheets):
         else:
             st.warning("لا توجد نتائج")
 
-    else:  # الصيانة الوقائية
+    else:
         maint_df = load_maintenance_tasks()
         if maint_df.empty:
             st.warning("لا توجد بيانات في الصيانة الوقائية")
@@ -2137,7 +2072,6 @@ def execute_maintenance_with_date(sheets_edit, equipment_name, task_name, execut
     idx = df[mask].index[0]
     period_days = df.loc[idx, "الفترة_بالأيام"]
 
-    # منع تكرار التنفيذ في نفس التاريخ
     last_exec = df.loc[idx, "آخر_تنفيذ"]
     if pd.notna(last_exec) and hasattr(last_exec, 'date'):
         if last_exec.date() == execution_date:
@@ -2632,7 +2566,7 @@ def preventive_maintenance_tab(sheets_edit):
                     st.error("❌ فشل الحفظ")
     return sheets_edit
 
-# ------------------------------- دالة إدارة البيانات الرئيسية (معدلة) -------------------------------
+# ------------------------------- دالة إدارة البيانات الرئيسية -------------------------------
 def manage_data_edit(sheets_edit):
     if sheets_edit is None:
         st.warning("الملف غير موجود. استخدم زر 'تحديث من GitHub' في الشريط الجانبي أولاً")
@@ -2648,7 +2582,6 @@ def manage_data_edit(sheets_edit):
     
     username = st.session_state.get("username")
     
-    # ---------- التويب 1: عرض وتعديل الأقسام ----------
     with tabs_edit[0]:
         st.subheader("🗂️ عرض وتعديل بيانات الأقسام")
         st.info("🔍 يمكنك البحث والفلترة (بالنص، التاريخ، الماكينة) ثم تعديل البيانات مباشرة. يتم الحفظ والرفع إلى GitHub تلقائياً عند الضغط على '💾 حفظ التغييرات'.")
@@ -2855,7 +2788,6 @@ def manage_data_edit(sheets_edit):
                         for fault, count in top_faults.items():
                             st.write(f"- {fault}: {count}")
     
-    # باقي التبويبات
     with tabs_edit[1]:
         if sheets_edit:
             all_dept_names = [name for name in sheets_edit.keys() if name not in [APP_CONFIG["SPARE_PARTS_SHEET"], APP_CONFIG["MAINTENANCE_SHEET"]]]
@@ -2955,11 +2887,10 @@ with tabs[idx]:
     failures_analysis_tab(all_sheets)
 idx += 1
 
-# ------------------------------- تبويب الإشعارات (شريط إعلاني + جدول + بريد إلكتروني) -------------------------------
+# ------------------------------- تبويب الإشعارات -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
 
-    # ----- خيار التحديث التلقائي -----
     auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")
     if auto_refresh:
         st.components.v1.html("""
@@ -2971,7 +2902,6 @@ with tabs[idx]:
         """, height=0)
         st.info("✅ التحديث التلقائي مفعّل. سيتم تحديث الصفحة كل 30 ثانية.")
     
-    # ========== فحص الصيانة المتأخرة وإرسال إشعارات تلقائية ==========
     try:
         check_and_notify_maintenance_due()
     except Exception as e:
@@ -2984,7 +2914,6 @@ with tabs[idx]:
     all_sheets = load_all_sheets()
     allowed_sections = get_allowed_sections(all_sheets, username, "view")
     
-    # ---------- عرض الشريط الإعلاني للصيانة وقطع الغيار الحرجة ----------
     st.subheader("🛠️ تنبيهات الصيانة الوقائية وقطع الغيار الحرجة")
     
     allowed_equipment = []
@@ -3001,7 +2930,6 @@ with tabs[idx]:
         overdue = overdue[overdue["المعدة"].isin(allowed_equipment)]
         upcoming = upcoming[upcoming["المعدة"].isin(allowed_equipment)]
     
-    # جمع بيانات الصيانة للنص
     maintenance_text_parts = []
     for _, row in overdue.iterrows():
         eq = row['المعدة']
@@ -3026,7 +2954,6 @@ with tabs[idx]:
                 break
         maintenance_text_parts.append(f"🟡 قادمة: {eq} - {task} (بعد {days} يوم - {due_date}) [قسم: {section}]")
     
-    # جمع قطع الغيار الحرجة
     critical = get_critical_spare_parts()
     if username != "admin" and user_role != "admin":
         critical = [part for part in critical if part.get("القسم", "") in allowed_sections]
@@ -3126,7 +3053,6 @@ with tabs[idx]:
     st.subheader("📧 إعدادات إشعارات البريد الإلكتروني")
     st.info("سيتم إرسال إشعارات بريد إلكتروني تلقائية عند: إضافة حدث عطل، تنفيذ صيانة، أو اقتراب موعد صيانة.")
     
-    # تهيئة مفاتيح session_state إذا لم تكن موجودة
     if "temp_sender_email" not in st.session_state:
         st.session_state["temp_sender_email"] = EMAIL_SENDER
     if "temp_sender_password" not in st.session_state:
@@ -3134,37 +3060,64 @@ with tabs[idx]:
     if "temp_recipients" not in st.session_state:
         st.session_state["temp_recipients"] = EMAIL_RECIPIENTS
     
-   with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
-    # ... الحقول الموجودة ...
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 حفظ بيانات البريد مؤقتاً", key="save_email_temp"):
-            # ... كود الحفظ ...
-    with col2:
-        if st.button("📧 إرسال بريد تجريبي", key="test_email_btn"):
-            # جلب القيم الحالية من session_state
-            sender = st.session_state.get("temp_sender_email")
-            password = st.session_state.get("temp_sender_password")
-            recipients = st.session_state.get("temp_recipients")
-            if not sender or not password or not recipients:
-                st.warning("⚠️ يرجى حفظ بيانات البريد أولاً.")
-            else:
-                with st.spinner("جاري إرسال بريد تجريبي..."):
-                    success, msg = send_email_to_all(
-                        "📧 بريد تجريبي من نظام CMMS",
-                        "هذه رسالة تجريبية للتأكد من إعدادات البريد الإلكتروني.\n\nإذا وصلتك هذه الرسالة، فهذا يعني أن الإعدادات صحيحة."
-                    )
-                    if success:
-                        st.success(msg)
-                        st.balloons()
+    with st.expander("⚙️ إعدادات SMTP (مرة واحدة)", expanded=False):
+        st.info("أدخل بيانات حساب Gmail الخاص بك (يُفضل استخدام كلمة مرور التطبيق).")
+        
+        with st.form(key="email_settings_form"):
+            temp_sender = st.text_input(
+                "📧 البريد الإلكتروني للمرسل (Gmail)",
+                value=st.session_state["temp_sender_email"],
+                key="temp_sender_email_input"
+            )
+            temp_pass = st.text_input(
+                "🔑 كلمة مرور التطبيق (App Password)",
+                type="password",
+                value=st.session_state["temp_sender_password"],
+                key="temp_sender_password_input"
+            )
+            temp_recipients = st.text_area(
+                "📌 البريد الإلكتروني للمستلمين (افصل بينهم بفواصل)",
+                value=st.session_state["temp_recipients"],
+                key="temp_recipients_input",
+                placeholder="example1@domain.com, example2@domain.com"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                submitted = st.form_submit_button("💾 حفظ بيانات البريد مؤقتاً")
+                if submitted:
+                    if temp_sender and temp_pass and temp_recipients:
+                        st.session_state["temp_sender_email"] = temp_sender
+                        st.session_state["temp_sender_password"] = temp_pass
+                        st.session_state["temp_recipients"] = temp_recipients
+                        st.success("✅ تم حفظ بيانات البريد مؤقتاً!")
                     else:
-                        st.error(msg)
-    # ================================================================
+                        st.warning("⚠️ الرجاء إدخال جميع الحقول.")
+            
+            with col2:
+                test_btn = st.form_submit_button("📧 إرسال بريد تجريبي")
+                if test_btn:
+                    if not temp_sender or not temp_pass or not temp_recipients:
+                        st.warning("⚠️ الرجاء حفظ بيانات البريد أولاً.")
+                    else:
+                        st.session_state["temp_sender_email"] = temp_sender
+                        st.session_state["temp_sender_password"] = temp_pass
+                        st.session_state["temp_recipients"] = temp_recipients
+                        
+                        with st.spinner("جاري إرسال بريد تجريبي..."):
+                            success, msg = send_email_to_all(
+                                "📧 بريد تجريبي من نظام CMMS",
+                                "هذه رسالة تجريبية للتأكد من إعدادات البريد الإلكتروني.\n\nإذا وصلتك هذه الرسالة، فهذا يعني أن الإعدادات صحيحة."
+                            )
+                            if success:
+                                st.success(msg)
+                                st.balloons()
+                            else:
+                                st.error(msg)
     
     st.markdown("---")
     st.subheader("📋 أحداث وقطع غيار (مطوية)")
     
-    # 1. آخر الأحداث (مطوية)
     with st.expander("📋 آخر الأحداث المسجلة", expanded=False):
         activity_log = load_activity_log()
         filtered_log = []
@@ -3204,7 +3157,6 @@ with tabs[idx]:
         else:
             st.info("لا توجد أحداث مسجلة خلال الـ 24 ساعة الماضية.")
     
-    # 2. قطع الغيار الحرجة (مطوية)
     with st.expander("⚠️ قطع غيار حرجة (تفاصيل)", expanded=False):
         critical = get_critical_spare_parts()
         if username != "admin" and user_role != "admin":
@@ -3219,13 +3171,12 @@ with tabs[idx]:
         else:
             st.success("✅ لا توجد قطع غيار حرجة.")
     
-    # زر تحديث يدوي
     if st.button("🔄 تحديث الآن", key="manual_refresh"):
         st.rerun()
     
 idx += 1
 
-# باقي التبويبات (إضافة عطل، إدارة الماكينات، تعديل البيانات، إدارة المستخدمين، الدعم الفني) كما هي
+# باقي التبويبات
 if can_add_event:
     with tabs[idx]:
         if sheets_edit:
