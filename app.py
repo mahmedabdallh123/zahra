@@ -37,8 +37,9 @@ APP_CONFIG = {
 }
 
 # ------------------------------- إعدادات البريد الإلكتروني الثابتة -------------------------------
+# تأكد من تحديث EMAIL_PASSWORD بكلمة مرور التطبيق الجديدة
 EMAIL_SENDER = "belyarn8@gmail.com"
-EMAIL_PASSWORD = "mgcujjkwfwadpqqk"
+EMAIL_PASSWORD = "mgcujjkwfwadpqqk"  # يجب استبدالها بكلمة مرور التطبيق الصحيحة
 EMAIL_RECIPIENTS = "medotatch124@gmail.com"
 
 st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
@@ -82,25 +83,31 @@ GITHUB_TOKEN = st.secrets.get("github", {}).get("token", None)
 GITHUB_AVAILABLE = GITHUB_TOKEN is not None
 ACTIVITY_LOG_FILE = "activity_log.json"
 
-# ------------------------------- دوال البريد الإلكتروني -------------------------------
+# ------------------------------- دوال البريد الإلكتروني (محسنة) -------------------------------
 def send_email_notification(recipient_email, subject, body):
-    """إرسال بريد إلكتروني باستخدام SMTP (Gmail) مع رسائل خطأ مفصلة"""
+    """إرسال بريد إلكتروني باستخدام SMTP (Gmail) مع معالجة الأخطاء"""
     try:
-        smtp_server = "smtp.gmail.com"
-        smtp_port = 587
+        # استخدام بيانات SMTP من session_state
         sender_email = st.session_state.get("temp_sender_email")
         sender_password = st.session_state.get("temp_sender_password")
         
         if not sender_email or not sender_password:
             return False, "⚠️ بيانات البريد الإلكتروني غير موجودة في الجلسة. يرجى إدخالها في الإعدادات."
         
+        # إنشاء الرسالة
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = recipient_email
         msg['Subject'] = f"[CMMS] {subject}"
         msg.attach(MIMEText(body, 'plain', 'utf-8'))
         
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        # الاتصال بخادم Gmail
+        smtp_server = "smtp.gmail.com"
+        smtp_port = 587
+        
+        # محاولة الاتصال مع زيادة وقت المهلة
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+            server.set_debuglevel(0)  # يمكنك تغيير إلى 1 لعرض تفاصيل الاتصال (للتجربة)
             server.starttls()
             server.login(sender_email, sender_password)
             server.send_message(msg)
@@ -108,7 +115,7 @@ def send_email_notification(recipient_email, subject, body):
         return True, "✅ تم إرسال البريد الإلكتروني بنجاح!"
     
     except smtplib.SMTPAuthenticationError as e:
-        return False, f"❌ فشل المصادقة: اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من استخدام كلمة مرور التطبيق (App Password). (تفاصيل: {e})"
+        return False, f"❌ فشل المصادقة: اسم المستخدم أو كلمة المرور غير صحيحة. تأكد من استخدام كلمة مرور التطبيق (App Password) وليس كلمة المرور العادية. (تفاصيل: {e})"
     except smtplib.SMTPException as e:
         return False, f"❌ خطأ في SMTP: {e}"
     except Exception as e:
