@@ -82,5 +82,12 @@
     "action_type": "add_maintenance_task",
     "details": "تم إضافة بند صيانة 'صيانه شهرين' للماكينة كرد10 (فترة 24 ساعة)",
     "section": "الكرد"
+  },
+  {
+    "timestamp": "2026-08-29T17:16:56.939456",
+    "username": "admin",
+    "action_type": "add_maintenance_task",
+    "details": "تم إضافة بند صيانة 'صيانه شهرين' للماكينة كرد10 (فترة 24 ساعة)",
+    "section": "الكرد"
   }
 ]
