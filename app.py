@@ -18,8 +18,7 @@ from email.mime.multipart import MIMEMultipart
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
-    "APP_TITLE": "بيل يارن1- CMMS",
-    "APP_ICON": "🏭",
+
     "REPO_NAME": "mahmedabdallh123/zahra",
     "BRANCH": "main",
     "FILE_PATH": "l9.xlsx",
