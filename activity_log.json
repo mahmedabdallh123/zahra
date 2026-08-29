@@ -110,5 +110,12 @@
     "action_type": "execute_maintenance",
     "details": "تم تنفيذ صيانة 'صيانه شهريه' للماكينة BO-P بواسطة ل",
     "section": "التفتيح"
+  },
+  {
+    "timestamp": "2026-08-29T17:46:48.512348",
+    "username": "admin",
+    "action_type": "execute_maintenance",
+    "details": "تم تنفيذ صيانة 'صيانه شهريه' للماكينة BO-P بواسطة ل",
+    "section": "التفتيح"
   }
 ]
