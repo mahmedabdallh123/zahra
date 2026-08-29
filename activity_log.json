@@ -68,5 +68,12 @@
     "action_type": "execute_maintenance",
     "details": "تم تنفيذ صيانة 'تشحيم بلي السلندر 15جم لكل جانب وتشحيم الدوفر 8 جم لكل جانب' للماكينة كرد10 بواسطة ا",
     "section": "الكرد"
+  },
+  {
+    "timestamp": "2026-08-29T17:16:15.634829",
+    "username": "admin",
+    "action_type": "add_maintenance_task",
+    "details": "تم إضافة بند صيانة 'صيانه شهرين' للماكينة كرد10 (فترة 24 ساعة)",
+    "section": "الكرد"
   }
 ]
