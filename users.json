@@ -1,5 +1,6 @@
 {
     "admin": {
+        "email": "",
         "password": "1234",
         "permissions": {
             "all_sections": true
@@ -8,6 +9,7 @@
         "sections_permissions": {}
     },
     "manger": {
+        "email": "",
         "password": "55555",
         "permissions": {
             "all_sections": true
@@ -16,6 +18,7 @@
         "sections_permissions": {}
     },
     "مدير_صيانة": {
+        "email": "",
         "password": "12345",
         "permissions": {
             "all_sections": true
@@ -24,6 +27,7 @@
         "sections_permissions": {}
     },
     "مشرف_البرم": {
+        "email": "",
         "password": "12345678",
         "permissions": {
             "all_sections": false
@@ -49,6 +53,7 @@
         }
     },
     "مشرف_التمشيط": {
+        "email": "",
         "password": "1234567",
         "permissions": {
             "all_sections": false
@@ -89,6 +94,7 @@
         }
     },
     "مشرف_الغزل": {
+        "email": "",
         "password": "123456789",
         "permissions": {
             "all_sections": false
@@ -114,6 +120,7 @@
         }
     },
     "مشرف_المكابس": {
+        "email": "",
         "password": "2222",
         "permissions": {
             "all_sections": false
@@ -149,6 +156,7 @@
         }
     },
     "مشرف_تحضيرات": {
+        "email": "",
         "password": "5555",
         "permissions": {
             "all_sections": false
