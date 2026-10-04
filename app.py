@@ -14,7 +14,7 @@ from github import Github, GithubException
 
 # ------------------------------- الإعدادات الثابتة -------------------------------
 APP_CONFIG = {
-    "APP_TITLE": "بيل يارن 1- CMMS NCMP",
+    "APP_TITLE": "الشركه الوطنيه لمنتجات الذره- CMMS NCMP",
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/zahra",
     "BRANCH": "main",
