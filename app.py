@@ -16,7 +16,7 @@ from github import Github, GithubException
 
 # ------------------------------- App Config -------------------------------
 APP_CONFIG = {
-    "APP_TITLE": "vivo 1 - CMMS",
+    "APP_TITLE": "الشركه الوطنيه لمنتجات الذره- CMMS NCMP",
     "APP_ICON": "🏭",
     "REPO_NAME": "mahmedabdallh123/zahra",
     "BRANCH": "main",
