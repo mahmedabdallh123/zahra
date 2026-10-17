@@ -2836,19 +2836,6 @@ idx += 1
 # ------------------------------- تبويب الإشعارات (شريط إعلاني + جدول) -------------------------------
 with tabs[idx]:
     st.header("🔔 الإشعارات والتنبيهات")
-
-    # ----- خيار التحديث التلقائي -----
-    auto_refresh = st.checkbox("🔄 تفعيل التحديث التلقائي (كل 30 ثانية)", value=True, key="auto_refresh_checkbox")
-    if auto_refresh:
-        st.components.v1.html("""
-        <script>
-        setInterval(function() {
-            location.reload();
-        }, 30000);
-        </script>
-        """, height=0)
-        st.info("✅ التحديث التلقائي مفعّل. سيتم تحديث الصفحة كل 30 ثانية.")
-
     clean_old_activity_log(days_to_keep=1)
     
     username = st.session_state.get("username")
@@ -2927,45 +2914,8 @@ with tabs[idx]:
     for part in critical:
         maintenance_text_parts.append(f"⚠️ قطعة حرجة: {part['اسم القطعة']} (رصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}) [قسم: {part['القسم']}]")
     
-    if maintenance_text_parts:
-        text_to_scroll = " | ".join(maintenance_text_parts)
-        st.markdown(f"""
-        <style>
-        @keyframes scroll-text {{
-            0% {{ transform: translateX(-100%); }}
-            100% {{ transform: translateX(100%); }}
-        }}
-        .scrolling-wrapper {{
-            overflow: hidden;
-            white-space: nowrap;
-            background-color: #f8f9fa;
-            border: 2px solid #ffc107;
-            border-radius: 8px;
-            padding: 15px 0;
-            width: 100%;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            margin: 10px 0;
-        }}
-        .scrolling-content {{
-            display: inline-block;
-            animation: scroll-text 120s linear infinite;
-            font-size: 26px;
-            font-weight: bold;
-            color: #1a1a2e;
-            padding-left: 100%;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
-        }}
-        .scrolling-content:hover {{
-            animation-play-state: paused;
-        }}
-        </style>
-        <div class="scrolling-wrapper">
-            <div class="scrolling-content">
-                {text_to_scroll}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        if maintenance_text_parts:
+        st.warning("⚠️ يوجد تنبيهات تحتاج انتباهك — راجع الجدول أدناه")
     else:
         st.success("✅ لا توجد صيانات متأخرة أو قادمة، ولا توجد قطع غيار حرجة.")
     
