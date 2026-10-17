@@ -2914,11 +2914,10 @@ with tabs[idx]:
     for part in critical:
         maintenance_text_parts.append(f"⚠️ قطعة حرجة: {part['اسم القطعة']} (رصيد: {part['الرصيد الموجود']} < حد الإنذار: {part['حد_الإنذار']}) [قسم: {part['القسم']}]")
     
-        if maintenance_text_parts:
+    if maintenance_text_parts:
         st.warning("⚠️ يوجد تنبيهات تحتاج انتباهك — راجع الجدول أدناه")
     else:
         st.success("✅ لا توجد صيانات متأخرة أو قادمة، ولا توجد قطع غيار حرجة.")
-    
     st.markdown("---")
     st.subheader("📋 تفاصيل الصيانة (جدول)")
     
